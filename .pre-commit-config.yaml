@@ -1,0 +1,22 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+  # Ruff version.
+    rev: v0.5.4
+    hooks:
+      # Run the linter.
+      - id: ruff
+        types_or: [ python, pyi, jupyter ]
+        args: [ --fix ]
+      # Run the formatter.
+      - id: ruff-format
+        types_or: [ python, pyi, jupyter ]
+  # Python tests
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        # stages: [push]
+        entry: python -m pytest tests
+        language: system
+        always_run: true
+        pass_filenames: false
