@@ -62,6 +62,8 @@ class CrossAttention(nn.Module):
         # Rotary position embedding for incorporating positional information
         self.rope = rope
 
+        self.mha = MultiHeadAttention(num_heads=num_heads, attn_drop=attn_drop_rate)
+
     def forward(self, query_tokens, key_tokens, value_tokens, query_positions, key_positions):
         """
         Forward pass of cross-attention.
@@ -89,17 +91,24 @@ class CrossAttention(nn.Module):
         num_key_patches = key_tokens.shape[1]
         num_value_patches = value_tokens.shape[1]
 
+        print(f"query_tokens shape: {query_tokens.shape}")
+        print(f"key_tokens shape: {key_tokens.shape}")
+        print(f"value_tokens shape: {value_tokens.shape}")
+
+        head_dim = channels // self.num_heads
+
         # Project and reshape to multi-head format
-        # For each projection, shape becomes: (batch_size, num_heads, sequence_length, head_dimension)
         queries = (
             self.query_projection(query_tokens)
-            .reshape(batch_size, num_query_patches, self.num_heads, channels // self.num_heads)
+            # project from (batch_size, num_query_patches, channels) to (batch_size, num_query_patches, self.num_heads, head_dim)
+            .reshape(batch_size, num_query_patches, self.num_heads, head_dim)
+            # permute to (batch_size, self.num_heads, num_query_patches, head_dim)
             .permute(0, 2, 1, 3)
         )
 
         keys = (
             self.key_projection(key_tokens)
-            .reshape(batch_size, num_key_patches, self.num_heads, channels // self.num_heads)
+            .reshape(batch_size, num_key_patches, self.num_heads, head_dim)
             .permute(0, 2, 1, 3)
         )
 
@@ -109,6 +118,14 @@ class CrossAttention(nn.Module):
             .permute(0, 2, 1, 3)
         )
 
+        print(f"queries shape: {queries.shape}")
+        print(f"keys shape: {keys.shape}")
+        print(f"values shape: {values.shape}")
+
+        # Queries shape: (batch_size, num_heads, num_query_patches, head_dim)
+        # Keys shape: (batch_size, num_heads, num_key_patches, head_dim)
+        # Values shape: (batch_size, num_heads, num_value_patches, head_dim)
+
         # Apply rotary position embeddings if provided
         # RoPE helps model consider relative positions of tokens
         if self.rope is not None:
@@ -117,7 +134,10 @@ class CrossAttention(nn.Module):
 
         # === CROSS ATTENTION COMPUTATION ===
         # 1. Compute attention scores: how much each query should attend to each key
-        # Shape: (batch_size, num_heads, num_queries, num_keys)
+        # Queries shape: (batch_size, num_heads, num_query_patches, head_dim)
+        # Keys shape: (batch_size, num_heads, num_key_patches, head_dim)
+        # Keys transpose shape: (batch_size, num_heads, head_dim, num_key_patches)
+        # Result shape: (batch_size, num_heads, num_query_patches, num_key_patches)
         attention_scores = (queries @ keys.transpose(-2, -1)) * self.attention_scale
 
         # 2. Convert scores to probabilities with softmax
@@ -153,7 +173,6 @@ class Attention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = embed_dim // num_heads
 
-        self.scale = self.head_dim**-0.5
         self.qkv_bias = qkv_bias
         self.query_key_value = nn.Linear(self.embed_dim, self.embed_dim * 3, bias=self.qkv_bias)
 
@@ -218,17 +237,24 @@ class MultiHeadAttention(nn.Module):
         head_dim = embedding_dim // self.num_heads
         scale = head_dim**-0.5
 
-        # Reshape and transpose to match reference implementation
-        query_key_value = query_key_value.reshape(batch_size, seq_length, 3, self.num_heads, head_dim).transpose(1, 3)
+        # Split query_key_value into q, k, v
+        # Each shape: (batch_size, seq_length, 3, self.num_heads, head_dim) where 3 is q, k, v
+        query_key_value = query_key_value.reshape(batch_size, seq_length, 3, self.num_heads, head_dim)
 
-        # Split into q,k,v - each shape (batch_size, num_heads, seq_length, head_dim)
-        # Split QKV into separate tensors
-        # Each has shape (batch_size, num_heads, seq_length, head_dim)
+        # Transpose:
+        # (batch_size, seq_length, 3, self.num_heads, head_dim)
+        # to
+        # (batch_size, self.num_heads, 3, seq_length, head_dim)
+        query_key_value = query_key_value.transpose(1, 3)
+
+        # Split into q,k,v - each shape (batch_size, self.num_heads, seq_length, head_dim)
         q, k, v = [query_key_value[:, :, i] for i in range(3)]
 
         # Compute attention scores by multiplying Q with K^T
-        # (batch_size, num_heads, seq_length, head_dim) @ (batch_size, num_heads, head_dim, seq_length)
-        # = (batch_size, num_heads, seq_length, seq_length)
+        # Q shape: (batch_size, num_heads, seq_length, head_dim)
+        # K shape: (batch_size, num_heads, seq_length, head_dim)
+        # K^T shape: (batch_size, num_heads, head_dim, seq_length)
+        # Result shape: (batch_size, num_heads, seq_length, seq_length)
         attention_scores = q @ k.transpose(-2, -1)
 
         # Scale attention scores by sqrt(head_dim)
@@ -241,8 +267,98 @@ class MultiHeadAttention(nn.Module):
         attention_probs = self.attn_drop(attention_probs)
 
         # Multiply attention probabilities with values
-        # (batch_size, num_heads, seq_length, seq_length) @ (batch_size, num_heads, seq_length, head_dim)
-        # = (batch_size, num_heads, seq_length, head_dim)
+        # attention_probs shape: (batch_size, num_heads, seq_length, seq_length)
+        # v shape: (batch_size, num_heads, seq_length, head_dim)
+        # Result shape: (batch_size, num_heads, seq_length, head_dim)
         out = attention_probs @ v
 
         return out
+
+
+class MultiHeadAttentionV2(nn.Module):
+    def __init__(self, embed_dim, num_heads, attention_score_dropout_rate=0.0, output_dropout_rate=0.0):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        self.attention_scale = self.head_dim**-0.5
+        self.attention_score_dropout = nn.Dropout(attention_score_dropout_rate)
+        self.output_projection = nn.Linear(self.embed_dim, self.embed_dim)
+        self.output_dropout = nn.Dropout(output_dropout_rate)
+
+    def forward(self, query, key, value, use_loop=False):
+        """
+        Multi-head attention where position has already been encoded into the inputs.
+
+        Args:
+            query: Tensor of shape (batch_size, query_length, embedding_dim)
+            key: Tensor of shape (batch_size, key_length, embedding_dim)
+            value: Tensor of shape (batch_size, key_length, embedding_dim)
+
+            Note: key_length and value_length must match, but query_length can differ.
+            This allows for attention between sequences of different lengths.
+
+        Returns:
+            Tensor of shape (batch_size, query_length, embedding_dim)
+        """
+
+        batch_size, num_query_patches, embedding_dim = query.shape
+        num_key_patches = key.shape[1]
+        num_value_patches = value.shape[1]
+
+        assert num_key_patches == num_value_patches, "Key and value lengths must match"
+
+        # Project and reshape to multi-head format
+        multi_head_query = (
+            # project from (batch_size, num_query_patches, embedding_dim) to (batch_size, num_query_patches, self.num_heads, head_dim)
+            query
+            # reshape to (batch_size, num_query_patches, self.num_heads, head_dim)
+            .reshape(batch_size, num_query_patches, self.num_heads, self.head_dim)
+            # permute to (batch_size, self.num_heads, num_query_patches, head_dim)
+            .permute(0, 2, 1, 3)
+        )
+
+        multi_head_key = (
+            # project from (batch_size, num_key_patches, embedding_dim) to (batch_size, num_key_patches, self.num_heads, head_dim)
+            key
+            # reshape to (batch_size, num_key_patches, self.num_heads, head_dim)
+            .reshape(batch_size, num_key_patches, self.num_heads, self.head_dim)
+            # permute to (batch_size, self.num_heads, num_key_patches, head_dim)
+            .permute(0, 2, 1, 3)
+        )
+
+        multi_head_value = (
+            # project from (batch_size, num_value_patches, embedding_dim) to (batch_size, num_value_patches, self.num_heads, head_dim)
+            value
+            # reshape to (batch_size, num_value_patches, self.num_heads, head_dim)
+            .reshape(batch_size, num_value_patches, self.num_heads, self.head_dim)
+            # permute to (batch_size, self.num_heads, num_value_patches, head_dim)
+            .permute(0, 2, 1, 3)
+        )
+
+        # 1. Compute attention scores: how much each query should attend to each key
+        # multi_head_query shape: (batch_size, num_heads, num_query_patches, head_dim)
+        # multi_head_key shape: (batch_size, num_heads, num_key_patches, head_dim)
+        # multi_head_key.transpose shape: (batch_size, num_heads, head_dim, num_key_patches)
+        # Result shape: (batch_size, num_heads, num_query_patches, num_key_patches)
+        attention_scores = (multi_head_query @ multi_head_key.transpose(-2, -1)) * self.attention_scale
+
+        # 2. Convert scores to probabilities with softmax
+        # This determines how much each query will "focus" on different keys
+        attention_weights = attention_scores.softmax(dim=-1)
+        attention_weights = self.attention_score_dropout(attention_weights)
+
+        # 3. Use attention weights to aggregate values
+        # This creates a weighted sum of values for each query
+        # Shape: (batch_size, num_queries, embedding_dim)
+        attended_values = (
+            (attention_weights @ multi_head_value)
+            .transpose(1, 2)
+            .reshape(batch_size, num_query_patches, embedding_dim)
+        )
+
+        # Final projection and dropout
+        output = self.output_projection(attended_values)
+        output = self.output_dropout(output)
+
+        return output

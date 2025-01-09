@@ -3,8 +3,8 @@ import pytest
 import torch
 import torch.nn as nn
 
-from src.annotated.patch_embed import PatchEmbed as AnnotatedPatchEmbed
-from src.annotated.patch_embed import PositionGetter
+from src.annotated.croco.patch_embed import PatchEmbed as AnnotatedPatchEmbed
+from src.annotated.croco.patch_embed import PositionGetter
 from src.croco.models.blocks import PatchEmbed as CrocoPatchEmbed
 
 

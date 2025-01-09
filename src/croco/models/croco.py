@@ -192,18 +192,18 @@ class CroCoNet(nn.Module):
 
         masks1 can be None => assume image1 fully visible
         """
-        print("Decoder parameters:")
-        print(f"feat1 shape: {feat1.shape}")
-        print(f"pos1 shape: {pos1.shape}")
-        print(f"masks1 shape: {masks1.shape if masks1 is not None else 'None'}")
-        print(f"feat2 shape: {feat2.shape}")
-        print(f"pos2 shape: {pos2.shape}")
-        print(f"return_all_blocks: {return_all_blocks}")
+        # print("Decoder parameters:")
+        # print(f"feat1 shape: {feat1.shape}")
+        # print(f"pos1 shape: {pos1.shape}")
+        # print(f"masks1 shape: {masks1.shape if masks1 is not None else 'None'}")
+        # print(f"feat2 shape: {feat2.shape}")
+        # print(f"pos2 shape: {pos2.shape}")
+        # print(f"return_all_blocks: {return_all_blocks}")
         # encoder to decoder layer
         visf1 = self.decoder_embed(feat1)
-        print(f"visf1 shape: {visf1.shape}")
+        # print(f"visf1 shape: {visf1.shape}")
         f2 = self.decoder_embed(feat2)
-        print(f"f2 shape: {f2.shape}")
+        # print(f"f2 shape: {f2.shape}")
         # append masked tokens to the sequence
         B, Nenc, C = visf1.size()
         if masks1 is None:  # downstreams
@@ -211,18 +211,18 @@ class CroCoNet(nn.Module):
         else:  # pretraining
             Ntotal = masks1.size(1)
             f1_ = self.mask_token.repeat(B, Ntotal, 1).to(dtype=visf1.dtype)
-            print(f"f1_ shape after mask_token: {f1_.shape}")
+            # print(f"f1_ shape after mask_token: {f1_.shape}")
             f1_[~masks1] = visf1.view(B * Nenc, C)
-            print(f"f1_ shape after masking: {f1_.shape}")
+            # print(f"f1_ shape after masking: {f1_.shape}")
             # return (f1_, masks1)
 
         # add positional embedding
         if self.dec_pos_embed is not None:
             f1_ = f1_ + self.dec_pos_embed
             # return (f1_, self.dec_pos_embed)
-            print(f"f1_ shape after pos embed: {f1_.shape}")
+            # print(f"f1_ shape after pos embed: {f1_.shape}")
             f2 = f2 + self.dec_pos_embed
-            print(f"f2 shape after pos embed: {f2.shape}")
+            # print(f"f2 shape after pos embed: {f2.shape}")
         # apply Transformer blocks
         out = f1_
         out2 = f2
@@ -233,16 +233,16 @@ class CroCoNet(nn.Module):
             _out, out = out, []
             for i, blk in enumerate(self.dec_blocks):
                 _out, out2 = blk(_out, out2, pos1, pos2)
-                print(f"Block {i} - _out shape: {_out.shape}, out2 shape: {out2.shape}")
+                # print(f"Block {i} - _out shape: {_out.shape}, out2 shape: {out2.shape}")
                 out.append(_out)
             out[-1] = self.dec_norm(out[-1])
-            print(f"Final normalized output shape: {out[-1].shape}")
+            # print(f"Final normalized output shape: {out[-1].shape}")
         else:
             for i, blk in enumerate(self.dec_blocks):
                 out, out2 = blk(out, out2, pos1, pos2)
-                print(f"Block {i} - out shape: {out.shape}, out2 shape: {out2.shape}")
+                # print(f"Block {i} - out shape: {out.shape}, out2 shape: {out2.shape}")
             out = self.dec_norm(out)
-            print(f"Final normalized output shape: {out.shape}")
+            # print(f"Final normalized output shape: {out.shape}")
         return out
 
     def patchify(self, imgs):

@@ -1,0 +1,6 @@
+You are refactoring an existing application which has a GPLv3 license to be MIT
+
+# Important rules you HAVE TO FOLLOW
+- Always add debug and comments in the code for easier debugging and readability
+- Everytime to choose to apply a rule(s), explicity state the rule{s} in the output. You can abbreviate the rule to a single word or phrase
+- Before doing the refactoring, break it down step by step. Then validate each checkpoint with tests

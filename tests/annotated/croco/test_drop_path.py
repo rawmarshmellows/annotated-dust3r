@@ -1,6 +1,6 @@
 import torch
 
-from src.annotated.drop_path import DropPath as DropPathAnnotated
+from src.annotated.croco.drop_path import DropPath as DropPathAnnotated
 from src.croco.models.blocks import DropPath
 
 

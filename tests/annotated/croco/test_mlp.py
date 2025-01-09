@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 
-from src.annotated.mlp import Mlp as AnnotatedMLP
+from src.annotated.croco.mlp import Mlp as AnnotatedMLP
 from src.croco.models.blocks import Mlp as CrocoMLP
+from tests.test_utils import load_and_validate_state_dict_with_mapping
 
 
 def test_mlp_initialization():
@@ -63,22 +64,18 @@ def test_mlp_equivalence():
 
     croco_mlp = CrocoMLP(in_features=in_features, hidden_features=hidden_features, out_features=out_features)
 
+    # Initialize weights identically
+    key_mapping = {
+        "fc1.weight": "fc1.weight",
+        "fc1.bias": "fc1.bias",
+        "fc2.weight": "fc2.weight",
+        "fc2.bias": "fc2.bias",
+    }
+
+    load_and_validate_state_dict_with_mapping(annotated_mlp, croco_mlp, key_mapping)
+
     # Create input tensor
     x = torch.randn(batch_size, seq_len, in_features)
-
-    # Set both to eval mode to disable dropout
-    annotated_mlp.eval()
-    croco_mlp.eval()
-
-    # Initialize weights identically
-    with torch.no_grad():
-        # Copy fc1 weights
-        croco_mlp.fc1.weight.data = annotated_mlp.fc1.weight.data.clone()
-        croco_mlp.fc1.bias.data = annotated_mlp.fc1.bias.data.clone()
-
-        # Copy fc2 weights
-        croco_mlp.fc2.weight.data = annotated_mlp.fc2.weight.data.clone()
-        croco_mlp.fc2.bias.data = annotated_mlp.fc2.bias.data.clone()
 
     # Test forward pass
     with torch.no_grad():
@@ -86,4 +83,4 @@ def test_mlp_equivalence():
         croco_out = croco_mlp(x)
 
         # Test outputs are close
-        assert torch.allclose(annotated_out, croco_out, atol=1e-5)
+        assert torch.allclose(annotated_out, croco_out)

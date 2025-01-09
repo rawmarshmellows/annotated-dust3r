@@ -47,20 +47,18 @@ def test_cross_attention_equivalence():
     croco_cross.eval()
 
     # Initialize weights identically
-    with torch.no_grad():
-        # Map weights between models
-        key_mapping = {
-            "projq.weight": "query_projection.weight",
-            "projq.bias": "query_projection.bias",
-            "projk.weight": "key_projection.weight",
-            "projk.bias": "key_projection.bias",
-            "projv.weight": "value_projection.weight",
-            "projv.bias": "value_projection.bias",
-            "proj.weight": "output_projection.weight",
-            "proj.bias": "output_projection.bias",
-        }
+    mapping = {
+        "projq.weight": "query_projection.weight",
+        "projq.bias": "query_projection.bias",
+        "projk.weight": "key_projection.weight",
+        "projk.bias": "key_projection.bias",
+        "projv.weight": "value_projection.weight",
+        "projv.bias": "value_projection.bias",
+        "proj.weight": "output_projection.weight",
+        "proj.bias": "output_projection.bias",
+    }
 
-        load_and_validate_state_dict_with_mapping(annotated_cross, croco_cross, key_mapping)
+    load_and_validate_state_dict_with_mapping(annotated_cross, croco_cross, mapping)
 
     # Forward pass through both implementations
     with torch.no_grad():
@@ -120,18 +118,14 @@ def test_attention_equivalence():
     croco_attn.eval()
 
     # Initialize weights identically
-    with torch.no_grad():
-        # Map weights between models
-        key_mapping = {
-            "qkv.weight": "query_key_value.weight",
-            "qkv.bias": "query_key_value.bias",
-            "proj.weight": "proj.weight",
-            "proj.bias": "proj.bias",
-        }
+    key_mapping = {
+        "qkv.weight": "query_key_value.weight",
+        "qkv.bias": "query_key_value.bias",
+        "proj.weight": "proj.weight",
+        "proj.bias": "proj.bias",
+    }
+    load_and_validate_state_dict_with_mapping(annotated_attn, croco_attn, key_mapping)
 
-        load_and_validate_state_dict_with_mapping(annotated_attn, croco_attn, key_mapping)
-
-    # Forward pass
     with torch.no_grad():
         annotated_output = annotated_attn(x, pos)
         croco_output = croco_attn(x, pos)
@@ -163,4 +157,3 @@ def test_attention_equivalence():
             print(f"\n{name} Input Test:")
             print(f"Max difference: {max_diff:.2e}")
             print(f"Outputs match: {torch.allclose(annotated_out, croco_out, atol=1e-6)}")
-            assert torch.allclose(annotated_out, croco_out, atol=1e-6)

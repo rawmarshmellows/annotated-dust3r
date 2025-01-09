@@ -4,7 +4,7 @@ from typing import Callable, Dict, Tuple
 import torch
 import torch.nn as nn
 
-from src.annotated.utils import to_2tuple
+from .utils import to_2tuple
 
 
 class PositionGetter:

@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from src.annotated.patchify import patchify, unpatchify
+from src.annotated.croco.patchify import patchify, unpatchify
 
 
 def test_patchify_unpatchify_round_trip():

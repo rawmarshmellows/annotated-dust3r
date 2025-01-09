@@ -4,13 +4,13 @@ import torch
 import torch.nn as nn
 import tqdm
 
-from src.minimum_spanning_tree import (
+from .minimum_spanning_tree import (
     align_multiple_poses,
     minimum_spanning_tree_v2,
     rigid_points_registration,
     sRT_to_4x4,
 )
-from src.utils import (
+from .utils import (
     ParameterStack,
     _ravel_hw,
     adjust_learning_rate_by_lr,
@@ -30,7 +30,7 @@ from src.utils import (
     to_numpy,
     xy_grid,
 )
-from src.visualization import SceneViz
+from .visualization import SceneViz
 
 
 class PointCloudOptimizer(nn.Module):
