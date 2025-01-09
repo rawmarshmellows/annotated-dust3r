@@ -1,6 +1,6 @@
 import torch
 
-from src.annotated.mask_generator import RandomMask as AnnotatedRandomMask
+from src.annotated.croco.mask_generator import RandomMask as AnnotatedRandomMask
 from src.croco.models.masking import RandomMask as CrocoRandomMask
 
 

@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-from src.annotated.utils import to_2tuple
+from .utils import to_2tuple
 
 
 class Mlp(nn.Module):
