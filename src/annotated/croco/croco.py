@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
+from .patchify import patchify, unpatchify
 from .vision_transformer import VisionTransformerDecoderV2, VisionTransformerEncoderV2
 
 
@@ -26,6 +27,8 @@ class AnnotatedCroCo(nn.Module):
         pos_embed: str = "cosine",  # positional embedding (either cosine or RoPE100)
     ):
         super().__init__()
+
+        self.patch_size = patch_size
 
         # Create encoder
         self.encoder = VisionTransformerEncoderV2(
@@ -132,7 +135,7 @@ class AnnotatedCroCo(nn.Module):
         Returns:
             Patches of shape (B, L, patch_size**2 * 3)
         """
-        return self.encoder.patch_embed.patchify(imgs)
+        return patchify(imgs, self.patch_size)[0]  # Return only the patches
 
     def unpatchify(self, x: Tensor, channels: int = 3) -> Tensor:
         """
@@ -145,7 +148,7 @@ class AnnotatedCroCo(nn.Module):
         Returns:
             Images of shape (B, channels, H, W)
         """
-        return self.encoder.patch_embed.unpatchify(x, channels=channels)
+        return unpatchify(x, self.patch_size, channels=channels)[0]  # Return only the images
 
     def forward(self, img1: Tensor, img2: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """
@@ -163,6 +166,8 @@ class AnnotatedCroCo(nn.Module):
         """
         # encoder of the masked first image
         feat1, pos1, mask1 = self._encode_image(img1, do_mask=True)
+        # return feat1, pos1, mask1
+
         # encoder of the second image
         feat2, pos2, _ = self._encode_image(img2, do_mask=False)
         # decoder

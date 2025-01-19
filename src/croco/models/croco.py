@@ -283,6 +283,7 @@ class CroCoNet(nn.Module):
         """
         # encoder of the masked first image
         feat1, pos1, mask1 = self._encode_image(img1, do_mask=True)
+        # return feat1, pos1, mask1
         # encoder of the second image
         feat2, pos2, _ = self._encode_image(img2, do_mask=False)
         # decoder
