@@ -91,9 +91,9 @@ class CrossAttention(nn.Module):
         num_key_patches = key_tokens.shape[1]
         num_value_patches = value_tokens.shape[1]
 
-        print(f"query_tokens shape: {query_tokens.shape}")
-        print(f"key_tokens shape: {key_tokens.shape}")
-        print(f"value_tokens shape: {value_tokens.shape}")
+        # print(f"query_tokens shape: {query_tokens.shape}")
+        # print(f"key_tokens shape: {key_tokens.shape}")
+        # print(f"value_tokens shape: {value_tokens.shape}")
 
         head_dim = channels // self.num_heads
 
