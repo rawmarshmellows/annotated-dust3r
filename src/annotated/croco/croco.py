@@ -68,13 +68,14 @@ class AnnotatedCroCo(nn.Module):
         )
 
         # prediction head
-        self.prediction_head = nn.Linear(dec_embed_dim, patch_size**2 * 3, bias=True)
+        self.set_downstream_head()
 
-        # initialize weights
-        self.initialize_weights()
+    def set_downstream_head(self):
+        """Set up the downstream head for the model."""
+        n_colors = 3
+        n_pixels_in_patch = self.patch_size**2
+        self.prediction_head = nn.Linear(self.decoder.embed_dim, n_pixels_in_patch * n_colors, bias=True)
 
-    def initialize_weights(self):
-        """Initialize weights for the model."""
         # Initialize prediction head
         if isinstance(self.prediction_head, nn.Linear):
             torch.nn.init.xavier_uniform_(self.prediction_head.weight)
@@ -96,7 +97,8 @@ class AnnotatedCroCo(nn.Module):
             tuple:
                 - encoded_features: Encoded features of shape (B, N, C) or list of such features if return_all_blocks
                 - positions: Position encodings of shape (B, N, 2)
-                - masks: Boolean mask of shape (B, N) indicating which patches were masked
+                - masks: Boolean mask of shape (B, N) indicating which patches were masked'
+            where N is the number of patches in the image.
         """
         return self.encoder(image, do_mask=do_mask, return_all_blocks=return_all_blocks)
 

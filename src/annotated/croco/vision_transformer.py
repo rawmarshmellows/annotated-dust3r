@@ -505,13 +505,12 @@ class VisionTransformerDecoderV2(nn.Module):
         )
 
         self.norm = norm_layer(embed_dim)
-        self.num_patches = num_patches
 
     def forward(
         self,
-        masked_image_tokens: Tensor,
-        masked_image_pos: Tensor,
-        masked_image_mask: Tensor | None,
+        source_image_tokens: Tensor,
+        source_image_pos: Tensor,
+        source_image_mask: Tensor | None,
         reference_image_tokens: Tensor,
         reference_image_pos: Tensor,
         return_all_blocks: bool = False,
@@ -519,9 +518,9 @@ class VisionTransformerDecoderV2(nn.Module):
         """Forward pass of the Vision Transformer Decoder.
 
         Args:
-            masked_image: Image to be reconstructed of shape (batch_size, num_patches, embed_dim)
-            masked_image_mask: Boolean mask indicating which patches to reconstruct in masked_image (True = masked)
-            masked_image_pos: Positional encodings for masked image
+            source_image: Image to be reconstructed of shape (batch_size, num_unmasked_patches, embed_dim)
+            source_image_pos: Positional encodings for source image
+            source_image_mask: Boolean mask indicating which patches to reconstruct in source_image (True = masked)
             reference_image: Reference image from other perspective of shape (batch_size, num_patches, embed_dim)
             reference_image_pos: Positional encodings for reference image
             return_all_blocks: If True, return features from all blocks instead of just the last block
@@ -532,49 +531,54 @@ class VisionTransformerDecoderV2(nn.Module):
             If return_all_blocks is True:
                 List of output tensors from each block
         """
-        masked_image_tokens_reembedded = self.decoder_embed(masked_image_tokens)
-        reference_image_tokens_reembedded = self.decoder_embed(reference_image_tokens)
+        decoder_embedded_source_image_tokens = self.decoder_embed(source_image_tokens)
+        decoder_embedded_reference_image_tokens = self.decoder_embed(reference_image_tokens)
 
-        batch_size, num_patches, embed_dim = masked_image_tokens_reembedded.size()
+        batch_size, num_unmasked_source_image_patches, embed_dim = decoder_embedded_source_image_tokens.size()
 
-        if masked_image_mask is None:
-            only_unmasked_image_tokens_reembedded = masked_image_tokens_reembedded
+        if source_image_mask is None:
+            decoder_embedded_source_image_tokens = decoder_embedded_source_image_tokens
         else:
-            only_unmasked_image_tokens_reembedded = self.mask_token.repeat(
-                batch_size, masked_image_mask.size(1), 1
-            ).to(dtype=masked_image_tokens_reembedded.dtype)
-            only_unmasked_image_tokens_reembedded[~masked_image_mask] = masked_image_tokens_reembedded.view(
-                batch_size * num_patches, embed_dim
+            fully_masked_source_image_tokens = self.mask_token.repeat(batch_size, self.num_patches, 1).to(
+                dtype=decoder_embedded_source_image_tokens.dtype
             )
+
+            # replace the masked source image tokens with the unmasked source image tokens
+            # fully_masked_source_image_tokens[~source_image_mask] will be the indices of the unmasked source image tokens
+            fully_masked_source_image_tokens[~source_image_mask] = decoder_embedded_source_image_tokens.view(
+                batch_size * num_unmasked_source_image_patches, embed_dim
+            )
+
+            decoder_embedded_source_image_tokens = fully_masked_source_image_tokens
 
         # Add positional embeddings if provided
         if self.dec_pos_embed is not None:
-            only_unmasked_image_tokens_reembedded = only_unmasked_image_tokens_reembedded + self.dec_pos_embed
-            reference_image_tokens_reembedded = reference_image_tokens_reembedded + self.dec_pos_embed
+            decoder_embedded_source_image_tokens = decoder_embedded_source_image_tokens + self.dec_pos_embed
+            decoder_embedded_reference_image_tokens = decoder_embedded_reference_image_tokens + self.dec_pos_embed
 
         # Apply decoder blocks
-        only_unmasked_image_tokens_for_block = only_unmasked_image_tokens_reembedded
-        reference_image_tokens_for_block = reference_image_tokens_reembedded
+        source_image_tokens_for_block = decoder_embedded_source_image_tokens
+        reference_image_tokens_for_block = decoder_embedded_reference_image_tokens
 
         if return_all_blocks:
             outputs = []
             for i, blk in enumerate(self.blocks):
-                only_unmasked_image_tokens_for_block, reference_image_tokens_for_block = blk(
-                    only_unmasked_image_tokens_for_block,
+                source_image_tokens_for_block, reference_image_tokens_for_block = blk(
+                    source_image_tokens_for_block,
                     reference_image_tokens_for_block,
-                    masked_image_pos,
+                    source_image_pos,
                     reference_image_pos,
                 )
-                outputs.append(only_unmasked_image_tokens_for_block)
+                outputs.append(source_image_tokens_for_block)
             outputs[-1] = self.norm(outputs[-1])
             return outputs
 
         for i, blk in enumerate(self.blocks):
-            only_unmasked_image_tokens_for_block, reference_image_tokens_for_block = blk(
-                only_unmasked_image_tokens_for_block,
+            source_image_tokens_for_block, reference_image_tokens_for_block = blk(
+                source_image_tokens_for_block,
                 reference_image_tokens_for_block,
-                masked_image_pos,
+                source_image_pos,
                 reference_image_pos,
             )
-        only_unmasked_image_tokens_for_block = self.norm(only_unmasked_image_tokens_for_block)
-        return only_unmasked_image_tokens_for_block
+        source_image_tokens_for_block = self.norm(source_image_tokens_for_block)
+        return source_image_tokens_for_block

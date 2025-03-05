@@ -114,7 +114,7 @@ class CrossAttention(nn.Module):
 
         values = (
             self.value_projection(value_tokens)
-            .reshape(batch_size, num_value_patches, self.num_heads, channels // self.num_heads)
+            .reshape(batch_size, num_value_patches, self.num_heads, head_dim)
             .permute(0, 2, 1, 3)
         )
 
