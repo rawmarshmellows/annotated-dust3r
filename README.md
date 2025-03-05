@@ -1,1 +1,1 @@
-PYTHONPATH=. pytest tests/croco
+PYTHONPATH=. ptw . -sv tests/annotated/croco   
