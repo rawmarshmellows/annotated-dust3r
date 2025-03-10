@@ -11,10 +11,13 @@ def test_asymmetric_croco_3d_equivalence():
 
     # Initialize models
     annotated_model = AnnotatedAsymmetricCroCo3DStereo(
-        img_size=224, patch_size=16, output_mode="pts3d", head_type="linear"
+        img_size=224,
+        patch_size=16,
+        output_mode="pts3d",
+        head_type="linear",
     )
     original_model = AsymmetricCroCo3DStereo(
-        img_size=(224, 224), patch_size=16, output_mode="pts3d", head_type="linear"
+        img_size=(224, 224), patch_size=16, output_mode="pts3d", head_type="linear", pos_embed="RoPE"
     )
 
     # Define key mapping between original and annotated models

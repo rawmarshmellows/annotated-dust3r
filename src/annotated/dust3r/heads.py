@@ -37,7 +37,26 @@ class LinearPts3d(nn.Module):
         # extract 3D points
         feat = self.proj(tokens)  # B,S,D
         feat = feat.transpose(-1, -2).view(B, -1, H // self.patch_size, W // self.patch_size)
-        feat = F.pixel_shuffle(feat, self.patch_size)  # B,3,H,W
+
+        # feat = F.pixel_shuffle(feat, self.patch_size)  # B,3,H,W
+
+        # Manually implement pixel shuffle without using F.pixel_shuffle
+        # Original shape: [B, C*r*r, H/r, W/r] -> Target shape: [B, C, H, W]
+        # where r is self.patch_size
+        B, C_r_squared, H_small, W_small = feat.shape
+        C = C_r_squared // (self.patch_size**2)  # Calculate number of channels in output
+
+        # Reshape to [B, C, patch_size, patch_size, H_small, W_small]
+        feat = feat.view(B, C, self.patch_size, self.patch_size, H_small, W_small)
+
+        # Permute to [B, C, H_small, patch_size, W_small, patch_size]
+        feat = feat.permute(0, 1, 4, 2, 5, 3)
+
+        # Reshape to [B, C, H_small*patch_size, W_small*patch_size] which is [B, C, H, W]
+        feat = feat.reshape(B, C, H_small * self.patch_size, W_small * self.patch_size)  # B,3,H,W
+
+        # Add debug comment
+        # Now feat has shape [B, 3(+conf), H, W] where H=H_small*patch_size, W=W_small*patch_size
 
         # permute + norm depth
         return postprocess(feat, self.depth_mode, self.conf_mode)

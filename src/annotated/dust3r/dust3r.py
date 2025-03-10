@@ -107,13 +107,11 @@ class AnnotatedAsymmetricCroCo3DStereo(AnnotatedCroCo):
 
         # Apply decoder blocks
         for blk1, blk2 in zip(self.decoder.blocks, self.dec_blocks2):
-            import pdb
-
-            pdb.set_trace()
             # Process through first decoder
-            f1_new = blk1(final_output[-1][0], pos1, None, final_output[-1][1], pos2)
+            f1_new, _ = blk1(final_output[-1][0], final_output[-1][1], pos1, pos2)
             # Process through second decoder
-            f2_new = blk2(final_output[-1][1], pos2, None, final_output[-1][0], pos1)
+            f2_new, _ = blk2(final_output[-1][1], final_output[-1][0], pos1, pos2)
+
             final_output.append((f1_new, f2_new))
 
         # Remove duplicate output and apply normalization
