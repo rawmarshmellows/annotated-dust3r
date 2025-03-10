@@ -164,7 +164,7 @@ class PatchEmbed(nn.Module):
 
         x = self.proj(x)  # (B, embed_dim, num_patches_h, num_patches_w)
 
-        pos_encodings = self.position_getter(
+        patch_positions = self.position_getter(
             batch_size=B, num_patches_h=self.num_patches_h, num_patches_w=self.num_patches_w, device=x.device
         )  # (B, num_patches, 2)
 
@@ -172,4 +172,4 @@ class PatchEmbed(nn.Module):
             x = x.flatten(2).transpose(1, 2)  # (B, num_patches, embed_dim)
         x = self.norm(x)
 
-        return x, pos_encodings
+        return x, patch_positions

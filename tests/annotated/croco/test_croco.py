@@ -1,20 +1,21 @@
 import pytest
 import torch
+from test_utils import load_and_validate_state_dict_with_mapping
 
 from src.annotated.croco.croco import AnnotatedCroCo
 from src.croco.models.croco import CroCoNet
-from tests.test_utils import load_and_validate_state_dict_with_mapping
 
 
-def test_croco_equivalence():
+@pytest.mark.parametrize("pos_embed", ["cosine", "RoPE100"])
+# @pytest.mark.parametrize("pos_embed", ["cosine"])
+# @pytest.mark.parametrize("pos_embed", ["RoPE100"])
+def test_croco_with_equivalence(pos_embed):
     """Test that the annotated CroCo model is equivalent to the original CroCo model."""
-    annotated_model = AnnotatedCroCo(img_size=224, patch_size=16)
-    original_model = CroCoNet(img_size=224, patch_size=16)
+    annotated_model = AnnotatedCroCo(img_size=224, patch_size=16, pos_embed=pos_embed)
+    original_model = CroCoNet(img_size=224, patch_size=16, pos_embed=pos_embed)
 
     # Initialize weights identically
     encoder_key_mapping = {
-        # Positional embedding and patch embedding
-        "enc_pos_embed": "encoder.enc_pos_embed",
         # Note here that CroCo's norm_layer for the PatchEmbed is nn.Identity, so we don't need to map it
         # I believe this is a bug with their code
         # "patch_embed.norm.weight": "patch_embed.norm.weight",
@@ -24,6 +25,9 @@ def test_croco_equivalence():
         "enc_norm.weight": "encoder.norm.weight",
         "enc_norm.bias": "encoder.norm.bias",
     }
+
+    if pos_embed == "cosine":
+        encoder_key_mapping["enc_pos_embed"] = "encoder.enc_pos_embed"
 
     # Add mappings for each encoder block
     for i in range(12):
@@ -48,13 +52,15 @@ def test_croco_equivalence():
         encoder_key_mapping[f"enc_blocks.{i}.mlp.fc2.bias"] = f"encoder.blocks.{i}.mlp.fc2.bias"
 
     decoder_key_mapping = {
-        "dec_pos_embed": "decoder.dec_pos_embed",
         "decoder_embed.weight": "decoder.decoder_embed.weight",
         "decoder_embed.bias": "decoder.decoder_embed.bias",
         "dec_norm.weight": "decoder.norm.weight",
         "dec_norm.bias": "decoder.norm.bias",
         "mask_token": "decoder.mask_token",
     }
+
+    if pos_embed == "cosine":
+        decoder_key_mapping["dec_pos_embed"] = "decoder.dec_pos_embed"
 
     # Add mappings for each decoder block
     for i in range(8):

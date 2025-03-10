@@ -2,7 +2,7 @@ from typing import Callable
 
 import torch.nn as nn
 
-from .attention import Attention, MultiHeadAttentionV2
+from .attention import Attention, MultiHeadAttentionV2, MultiHeadAttentionWithRoPEV2
 from .drop_path import DropPath
 from .mlp import Mlp
 
@@ -186,10 +186,10 @@ class TransformerEncoderBlockV2(nn.Module):
         )
         self.norm2 = norm_layer(self.embed_dim)
 
-    def forward(self, input_tensor):
+    def forward(self, input_tokens, query_patch_positions, key_patch_positions):
         # First block: Input -> Norm1 -> Attention -> Skip Connection
-        attn_residual = input_tensor  # Store input for skip connection
-        normalized = self.norm1(input_tensor)  # First normalization layer
+        attn_residual = input_tokens  # Store input for skip connection
+        normalized = self.norm1(input_tokens)  # First normalization layer
 
         # Create query, key, value tensors
         # query_key_value shape: (batch_size, seq_len, 3*embed_dim)
@@ -198,7 +198,9 @@ class TransformerEncoderBlockV2(nn.Module):
         # Split into query, key, value
         query, key, value = query_key_value.split(self.embed_dim, dim=-1)
 
-        attended = self.attn(query, key, value)  # Multi-head self-attention
+        attended = self.attn(
+            query, key, value, query_patch_positions, key_patch_positions
+        )  # Multi-head self-attention
         post_attention = attn_residual + self.drop_path(attended)  # Skip connection with drop path
 
         # Second block: Norm2 -> MLP -> Skip Connection
@@ -208,3 +210,62 @@ class TransformerEncoderBlockV2(nn.Module):
         output = mlp_residual + self.drop_path(transformed)  # Skip connection with drop path
 
         return output
+
+
+class TransformerEncoderBlockWithRoPEV2(TransformerEncoderBlockV2):
+    """A Transformer encoder block with self-attention and feed-forward layers.
+
+    This block implements the standard Transformer encoder architecture consisting of:
+    1. Layer normalization
+    2. Multi-head self-attention with optional RoPE
+    3. Residual connection
+    4. Layer normalization
+    5. MLP feed-forward network
+    6. Residual connection
+
+    Args:
+        embed_dim (int): Input dimension/number of features
+        num_heads (int): Number of attention heads
+        mlp_ratio (float, optional): Ratio of mlp hidden dim to input dim. Default: 4.0
+        qkv_bias (bool, optional): If True, add bias to qkv projection. Default: False
+        proj_drop_rate (float, optional): Dropout rate after mlp and projection. Default: 0.0
+        attn_drop_rate (float, optional): Dropout rate after attention. Default: 0.0
+        path_drop_rate (float, optional): Drop path rate. Default: 0.0
+        act_layer (nn.Module, optional): Activation layer. Default: nn.GELU
+        norm_layer (nn.Module, optional): Normalization layer. Default: nn.LayerNorm
+        rope (optional): Rotary position embedding instance. Default: None
+    """
+
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int,
+        mlp_ratio: float = 4.0,
+        qkv_bias: bool = False,
+        proj_drop_rate: float = 0.0,
+        attn_drop_rate: float = 0.0,
+        path_drop_rate: float = 0.0,
+        act_layer: Callable[..., nn.Module] = nn.GELU,
+        norm_layer: Callable[..., nn.Module] = nn.LayerNorm,
+        rope_freq: float = 100.0,
+        rope_F0: float = 1.0,
+    ):
+        super().__init__(
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            mlp_ratio=mlp_ratio,
+            qkv_bias=qkv_bias,
+            proj_drop_rate=proj_drop_rate,
+            attn_drop_rate=attn_drop_rate,
+            path_drop_rate=path_drop_rate,
+            act_layer=act_layer,
+            norm_layer=norm_layer,
+        )
+        self.attn = MultiHeadAttentionWithRoPEV2(
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            attention_score_dropout_rate=attn_drop_rate,
+            output_dropout_rate=proj_drop_rate,
+            rope_freq=rope_freq,
+            rope_F0=rope_F0,
+        )

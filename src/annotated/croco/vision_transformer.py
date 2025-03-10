@@ -4,13 +4,19 @@ from typing import Callable, Tuple, Union
 import numpy as np
 import torch
 import torch.nn as nn
+from icecream import ic
 from torch import Tensor
 
-from .decoder_block import TransformerDecoderBlock, TransformerDecoderBlockV2
-from .encoder_block import TransformerEncoderBlock, TransformerEncoderBlockV2
+from .decoder_block import TransformerDecoderBlock, TransformerDecoderBlockV2, TransformerDecoderBlockWithRoPEV2
+from .encoder_block import TransformerEncoderBlock, TransformerEncoderBlockV2, TransformerEncoderBlockWithRoPEV2
 from .mask_generator import RandomMask
 from .patch_embed import PatchEmbed
-from .positional_embedding import construct_coordinate_grid_2d, get_2d_sincos_pos_embed_from_grid
+from .positional_embedding import (
+    PositionalEmbedderFactory,
+    SinCos2dPositionalEmbedder,
+    construct_coordinate_grid_2d,
+    get_2d_sincos_pos_embed_from_grid,
+)
 
 
 class VisionTransformerEncoder(nn.Module):
@@ -329,17 +335,6 @@ class VisionTransformerEncoderV2(nn.Module):
         self.qkv_bias = qkv_bias
         self.norm_layer = norm_layer
         self.pos_embed_type = pos_embed_type
-
-        if self.pos_embed_type == "sincos2d":
-            # (n_patches, embed_dim)
-            coordinate_grid_2d = construct_coordinate_grid_2d(
-                grid_size_x=int(self.num_patches**0.5), grid_size_y=int(self.num_patches**0.5)
-            )
-            enc_pos_embed = get_2d_sincos_pos_embed_from_grid(self.embed_dim, coordinate_grid_2d)
-            self.register_buffer("enc_pos_embed", torch.from_numpy(enc_pos_embed.astype(np.float32)).float())
-        else:
-            raise NotImplementedError(f"Positional embedding {self.pos_embed_type} not implemented")
-
         self.patch_embed = PatchEmbed(
             img_size,
             patch_size,
@@ -348,29 +343,57 @@ class VisionTransformerEncoderV2(nn.Module):
             norm_layer=embed_norm_layer,
             flatten=True,
         )
-
         self.mask_generator = RandomMask(self.num_patches, self.mask_ratio)
-
-        self.blocks = nn.ModuleList(
-            [
-                TransformerEncoderBlockV2(
-                    embed_dim=embed_dim,
-                    num_heads=num_heads,
-                    mlp_ratio=mlp_ratio,
-                    qkv_bias=qkv_bias,
-                    proj_drop_rate=proj_drop_rate,
-                    attn_drop_rate=attn_drop_rate,
-                    path_drop_rate=path_drop_rate,
-                    norm_layer=norm_layer,
-                )
-                for _ in range(num_layers)
-            ]
-        )
-
         self.norm = norm_layer(embed_dim)
 
+        if self.pos_embed_type == "sincos2d":
+            self.positional_embedder = PositionalEmbedderFactory.create_sincos2d_positional_embedder(
+                register_named_buffer_fn=partial(self.register_buffer, name="enc_pos_embed"),
+                get_buffer_fn=lambda: self.enc_pos_embed,
+                embed_dim=self.embed_dim,
+                num_patches=self.num_patches,
+            )
+            self.blocks = nn.ModuleList(
+                [
+                    TransformerEncoderBlockV2(
+                        embed_dim=embed_dim,
+                        num_heads=num_heads,
+                        mlp_ratio=mlp_ratio,
+                        qkv_bias=qkv_bias,
+                        proj_drop_rate=proj_drop_rate,
+                        attn_drop_rate=attn_drop_rate,
+                        path_drop_rate=path_drop_rate,
+                        norm_layer=norm_layer,
+                    )
+                    for _ in range(num_layers)
+                ]
+            )
+
+        elif self.pos_embed_type == "RoPE100":
+            self.positional_embedder = None
+            self.blocks = nn.ModuleList(
+                [
+                    TransformerEncoderBlockWithRoPEV2(
+                        embed_dim=embed_dim,
+                        num_heads=num_heads,
+                        mlp_ratio=mlp_ratio,
+                        qkv_bias=qkv_bias,
+                        proj_drop_rate=proj_drop_rate,
+                        attn_drop_rate=attn_drop_rate,
+                        path_drop_rate=path_drop_rate,
+                        norm_layer=norm_layer,
+                        rope_freq=100.0,
+                        rope_F0=1.0,
+                    )
+                    for _ in range(num_layers)
+                ]
+            )
+
+        else:
+            raise ValueError(f"Positional embedding type {self.pos_embed_type} not implemented")
+
     def forward(
-        self, x: Tensor, do_mask: bool = False, return_all_blocks: bool = False
+        self, image: Tensor, do_mask: bool = False, return_all_blocks: bool = False
     ) -> tuple[Tensor, Tensor] | Tensor:
         """Forward pass of the Vision Transformer Encoder.
 
@@ -385,38 +408,55 @@ class VisionTransformerEncoderV2(nn.Module):
             Else:
                 final_output
         """
+        ic(self.__class__.__name__)
         # 1. Create patches from input image
-        x, pos_encodings = self.patch_embed(x)
-        batch_size, num_patches, embed_dim = x.shape
+        image_patches, patch_positions = self.patch_embed(image)
+        ic(image_patches.shape)
+        ic(patch_positions.shape)
+
+        batch_size, num_patches, embed_dim = image_patches.shape
+        ic(image_patches.shape)
         assert num_patches == self.num_patches, f"Expected {self.num_patches} patches, got {num_patches}"
 
         # 2. Add positional embeddings
-        if self.enc_pos_embed is not None:
-            x = x + self.enc_pos_embed[None, ...]
+        if isinstance(self.positional_embedder, SinCos2dPositionalEmbedder):
+            image_patches = self.positional_embedder.embed(image_patches, patch_positions)
 
         # 3. Apply masking if requested
         if do_mask:
-            masks = self.mask_generator(x)  # True indicates masked tokens
+            masks = self.mask_generator(image_patches)  # True indicates masked tokens
+            ic(masks.shape)
             # Keep only unmasked tokens (~masks inverts the mask)
-            x = x[~masks].view(batch_size, -1, embed_dim)
-            pos_encodings = pos_encodings[~masks].view(batch_size, -1, 2)
+            image_patches = image_patches[~masks].view(batch_size, -1, embed_dim)
+            ic(image_patches.shape)
+            ic(patch_positions.shape)
+            patch_positions_for_unmasked_patches = patch_positions[~masks].view(batch_size, -1, 2)
+            ic(patch_positions_for_unmasked_patches.shape)
         else:
-            masks = torch.zeros((batch_size, num_patches), dtype=torch.bool, device=x.device)
-            pos_encodings = pos_encodings
+            masks = torch.zeros((batch_size, num_patches), dtype=torch.bool, device=image_patches.device)
+            patch_positions_for_unmasked_patches = patch_positions
 
         # 4. Apply transformer encoder blocks
         if return_all_blocks:
             features = []
             for blk in self.blocks:
-                x = blk(x)
-                features.append(x)
+                image_patches = blk(
+                    image_patches,
+                    query_patch_positions=patch_positions_for_unmasked_patches,
+                    key_patch_positions=patch_positions_for_unmasked_patches,
+                )
+                features.append(image_patches)
             features[-1] = self.norm(features[-1])
-            return features, pos_encodings, masks
+            return features, patch_positions, masks
         else:
             for blk in self.blocks:
-                x = blk(x)
-            x = self.norm(x)
-            return x, pos_encodings, masks
+                image_patches = blk(
+                    image_patches,
+                    query_patch_positions=patch_positions_for_unmasked_patches,
+                    key_patch_positions=patch_positions_for_unmasked_patches,
+                )
+            image_patches = self.norm(image_patches)
+            return image_patches, patch_positions, masks
 
 
 class VisionTransformerDecoderV2(nn.Module):
@@ -474,55 +514,73 @@ class VisionTransformerDecoderV2(nn.Module):
         self.decoder_embed = nn.Linear(enc_embed_dim, embed_dim, bias=True)
         self.pos_embed_type = pos_embed_type
         self.mask_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        self.norm = norm_layer(embed_dim)
 
         if self.pos_embed_type == "sincos2d":
-            # (n_patches, embed_dim)
-            coordinate_grid_2d = construct_coordinate_grid_2d(
-                grid_size_x=int(self.num_patches**0.5), grid_size_y=int(self.num_patches**0.5)
+            self.positional_embedder = PositionalEmbedderFactory.create_sincos2d_positional_embedder(
+                register_named_buffer_fn=partial(self.register_buffer, name="dec_pos_embed"),
+                get_buffer_fn=lambda: self.dec_pos_embed,
+                embed_dim=self.embed_dim,
+                num_patches=self.num_patches,
             )
-            enc_pos_embed = get_2d_sincos_pos_embed_from_grid(self.embed_dim, coordinate_grid_2d)
-            self.register_buffer("dec_pos_embed", torch.from_numpy(enc_pos_embed.astype(np.float32)).float())
+            self.blocks = nn.ModuleList(
+                [
+                    TransformerDecoderBlockV2(
+                        embed_dim=embed_dim,
+                        num_heads=num_heads,
+                        mlp_ratio=mlp_ratio,
+                        qkv_bias=qkv_bias,
+                        proj_drop_rate=proj_drop_rate,
+                        attn_drop_rate=attn_drop_rate,
+                        path_drop_rate=path_drop_rate,
+                        act_layer=act_layer,
+                        norm_layer=norm_layer,
+                        norm_mem=norm_mem,
+                    )
+                    for _ in range(num_layers)
+                ]
+            )
+        elif self.pos_embed_type == "RoPE100":
+            self.positional_embedder = None
+            self.blocks = nn.ModuleList(
+                [
+                    TransformerDecoderBlockWithRoPEV2(
+                        embed_dim=embed_dim,
+                        num_heads=num_heads,
+                        mlp_ratio=mlp_ratio,
+                        qkv_bias=qkv_bias,
+                        proj_drop_rate=proj_drop_rate,
+                        attn_drop_rate=attn_drop_rate,
+                        path_drop_rate=path_drop_rate,
+                        act_layer=act_layer,
+                        norm_layer=norm_layer,
+                        norm_mem=norm_mem,
+                        rope_freq=100.0,
+                        rope_F0=1.0,
+                    )
+                    for _ in range(num_layers)
+                ]
+            )
         else:
-            raise NotImplementedError(f"Positional embedding {self.pos_embed_type} not implemented")
-
-        # Create decoder blocks
-        self.blocks = nn.ModuleList(
-            [
-                TransformerDecoderBlockV2(
-                    embed_dim=embed_dim,
-                    num_heads=num_heads,
-                    mlp_ratio=mlp_ratio,
-                    qkv_bias=qkv_bias,
-                    proj_drop_rate=proj_drop_rate,
-                    attn_drop_rate=attn_drop_rate,
-                    path_drop_rate=path_drop_rate,
-                    act_layer=act_layer,
-                    norm_layer=norm_layer,
-                    norm_mem=norm_mem,
-                )
-                for _ in range(num_layers)
-            ]
-        )
-
-        self.norm = norm_layer(embed_dim)
+            raise ValueError(f"Positional embedding type {self.pos_embed_type} not implemented")
 
     def forward(
         self,
         source_image_tokens: Tensor,
-        source_image_pos: Tensor,
+        source_image_patch_positions: Tensor,
         source_image_mask: Tensor | None,
         reference_image_tokens: Tensor,
-        reference_image_pos: Tensor,
+        reference_image_patch_positions: Tensor,
         return_all_blocks: bool = False,
     ) -> Tensor | list[Tensor]:
         """Forward pass of the Vision Transformer Decoder.
 
         Args:
-            source_image: Image to be reconstructed of shape (batch_size, num_unmasked_patches, embed_dim)
-            source_image_pos: Positional encodings for source image
+            source_image: Image to be reconstructed of shape (batch_size, image_patches, embed_dim)
+            source_image_patch_positions: Positional encodings for source image
             source_image_mask: Boolean mask indicating which patches to reconstruct in source_image (True = masked)
             reference_image: Reference image from other perspective of shape (batch_size, num_patches, embed_dim)
-            reference_image_pos: Positional encodings for reference image
+            reference_image_patch_positions: Positional encodings for reference image
             return_all_blocks: If True, return features from all blocks instead of just the last block
 
         Returns:
@@ -534,7 +592,7 @@ class VisionTransformerDecoderV2(nn.Module):
         decoder_embedded_source_image_tokens = self.decoder_embed(source_image_tokens)
         decoder_embedded_reference_image_tokens = self.decoder_embed(reference_image_tokens)
 
-        batch_size, num_unmasked_source_image_patches, embed_dim = decoder_embedded_source_image_tokens.size()
+        batch_size, num_tokens, embed_dim = decoder_embedded_source_image_tokens.size()
 
         if source_image_mask is None:
             decoder_embedded_source_image_tokens = decoder_embedded_source_image_tokens
@@ -546,19 +604,27 @@ class VisionTransformerDecoderV2(nn.Module):
             # replace the masked source image tokens with the unmasked source image tokens
             # fully_masked_source_image_tokens[~source_image_mask] will be the indices of the unmasked source image tokens
             fully_masked_source_image_tokens[~source_image_mask] = decoder_embedded_source_image_tokens.view(
-                batch_size * num_unmasked_source_image_patches, embed_dim
+                batch_size * num_tokens, embed_dim
             )
 
             decoder_embedded_source_image_tokens = fully_masked_source_image_tokens
 
         # Add positional embeddings if provided
-        if self.dec_pos_embed is not None:
-            decoder_embedded_source_image_tokens = decoder_embedded_source_image_tokens + self.dec_pos_embed
-            decoder_embedded_reference_image_tokens = decoder_embedded_reference_image_tokens + self.dec_pos_embed
+        if self.positional_embedder is not None:
+            decoder_embedded_source_image_tokens = self.positional_embedder.embed(
+                decoder_embedded_source_image_tokens, source_image_patch_positions
+            )
+            decoder_embedded_reference_image_tokens = self.positional_embedder.embed(
+                decoder_embedded_reference_image_tokens, reference_image_patch_positions
+            )
 
         # Apply decoder blocks
         source_image_tokens_for_block = decoder_embedded_source_image_tokens
         reference_image_tokens_for_block = decoder_embedded_reference_image_tokens
+
+        ic(decoder_embedded_source_image_tokens.size())
+        ic(decoder_embedded_reference_image_tokens.size())
+        ic(decoder_embedded_source_image_tokens.size())
 
         if return_all_blocks:
             outputs = []
@@ -566,8 +632,8 @@ class VisionTransformerDecoderV2(nn.Module):
                 source_image_tokens_for_block, reference_image_tokens_for_block = blk(
                     source_image_tokens_for_block,
                     reference_image_tokens_for_block,
-                    source_image_pos,
-                    reference_image_pos,
+                    source_image_patch_positions,
+                    reference_image_patch_positions,
                 )
                 outputs.append(source_image_tokens_for_block)
             outputs[-1] = self.norm(outputs[-1])
@@ -577,8 +643,8 @@ class VisionTransformerDecoderV2(nn.Module):
             source_image_tokens_for_block, reference_image_tokens_for_block = blk(
                 source_image_tokens_for_block,
                 reference_image_tokens_for_block,
-                source_image_pos,
-                reference_image_pos,
+                source_image_patch_positions,
+                reference_image_patch_positions,
             )
         source_image_tokens_for_block = self.norm(source_image_tokens_for_block)
         return source_image_tokens_for_block
