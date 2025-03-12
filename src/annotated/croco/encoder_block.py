@@ -67,46 +67,6 @@ class TransformerEncoderBlock(nn.Module):
 
     def forward(self, input_tensor, pos_encoding):
         """Forward pass of the transformer encoder block.
-
-        Architecture:
-                    TransformerEncoderBlock
-                               ↓
-                    ┌──────────────────────┐
-                    │     Input Tensor     │  <- input_tensor
-                    └──────────┬───────────┘
-                               ↓
-                    ┌──────────────────────┐
-                    │    Layer Norm 1      │  <- self.norm1(input_tensor)
-                    └──────────┬───────────┘
-                               ↓
-                    ┌──────────────────────┐
-                    │   Multi-Head Self    │
-                    │      Attention       │  <- self.attn(normalized, pos_encoding)
-                    └──────────┬───────────┘      │
-                               │                  │
-                               ↓            Skip Connection
-                    ┌──────────┴──────────┐       │
-                    │          +          ◄───────┘  <- attn_residual + self.drop_path(attended)
-                    └──────────┬──────────┘
-                               │
-                               ↓
-                    ┌──────────────────────┐
-                    │    Layer Norm 2      │  <- self.norm2(post_attention)
-                    └──────────┬───────────┘
-                               ↓
-                    ┌──────────────────────┐
-                    │    Feed Forward      │  <- self.mlp(normalized)
-                    └──────────┬───────────┘      │
-                               │                  │
-                               ↓            Skip Connection
-                    ┌──────────┴──────────┐       │
-                    │          +          ◄───────┘  <- mlp_residual + self.drop_path(transformed)
-                    └──────────┬──────────┘
-                               ↓
-                    ┌──────────────────────┐
-                    │    Output Tensor     │  <- output
-                    └──────────────────────┘
-
         Args:
             input_tensor (torch.Tensor): Input tensor of shape (B, N, D) where B is batch size,
                 N is sequence length, and D is dimension

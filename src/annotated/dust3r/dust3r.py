@@ -1,6 +1,8 @@
+import os
 from copy import deepcopy
 from typing import Any, Dict, Optional, Tuple
 
+import huggingface_hub
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -10,7 +12,27 @@ from .heads import head_factory
 from .utils import fill_default_args, freeze_all_params, interleave, is_symmetrized, transpose_to_landscape
 
 
-class AnnotatedAsymmetricCroCo3DStereo(AnnotatedCroCo):
+def load_model(model_path, device):
+    ckpt = torch.load(model_path, map_location="cpu")
+
+    args = ckpt["args"].model.replace("ManyAR_PatchEmbed", "PatchEmbedDust3R")
+    if "landscape_only" not in args:
+        args = args[:-1] + ", landscape_only=False)"
+    else:
+        args = args.replace(" ", "").replace("landscape_only=True", "landscape_only=False")
+    assert "landscape_only=False" in args
+    net = eval(args)
+    s = net.load_state_dict(ckpt["model"], strict=False)
+    return net.to(device)
+
+
+class AnnotatedAsymmetricCroCo3DStereo(
+    AnnotatedCroCo,
+    huggingface_hub.PyTorchModelHubMixin,
+    library_name="dust3r",
+    repo_url="https://github.com/naver/dust3r",
+    tags=["image-to-3d"],
+):
     """Annotated version of AsymmetricCroCo3DStereo."""
 
     def __init__(
@@ -21,13 +43,25 @@ class AnnotatedAsymmetricCroCo3DStereo(AnnotatedCroCo):
         conf_mode: tuple = ("exp", 1, float("inf")),
         freeze: str = "none",
         landscape_only: bool = True,
+        patch_embed_cls: str = "PatchEmbedDust3R",
         **croco_kwargs,
     ):
         # Store the initialization arguments
+        self.patch_embed_cls = patch_embed_cls
         self.croco_args = fill_default_args(croco_kwargs, super().__init__)
-        self.img_size = croco_kwargs.get("img_size", 224)
+        assert "img_size" in self.croco_args, "img_size must be provided"
+        self.img_size = self.croco_args["img_size"]
+
+        import pdb
+
+        pdb.set_trace()
+
         if isinstance(self.img_size, int):
             self.img_size = (self.img_size, self.img_size)
+
+        if isinstance(self.img_size, list):
+            assert len(self.img_size) == 2, "img_size must be a tuple of two integers"
+            self.img_size = tuple(self.img_size)
 
         self.output_mode = output_mode
         self.head_type = head_type
@@ -44,6 +78,23 @@ class AnnotatedAsymmetricCroCo3DStereo(AnnotatedCroCo):
 
         # Set up the downstream heads and freeze parameters if needed
         self.set_freeze(freeze)
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, **kw):
+        import pdb
+
+        pdb.set_trace()
+        if os.path.isfile(pretrained_model_name_or_path):
+            return load_model(pretrained_model_name_or_path, device="cpu")
+        else:
+            try:
+                model = super(AnnotatedAsymmetricCroCo3DStereo, cls).from_pretrained(
+                    pretrained_model_name_or_path, **kw
+                )
+            except TypeError as e:
+                print(e)
+                raise Exception(f"tried to load {pretrained_model_name_or_path} from huggingface, but failed")
+            return model
 
     def set_freeze(self, freeze: str):
         """Freeze specified parts of the model."""

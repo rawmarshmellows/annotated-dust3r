@@ -2,13 +2,14 @@ import numpy as np
 import pytest
 import torch
 import torch.nn as nn
+from test_utils import load_and_validate_state_dict_with_mapping
 
+from src.annotated.croco.patch_embed import PatchEmbed
 from src.annotated.croco.vision_transformer import VisionTransformerDecoder as AnnotatedDecoder
 from src.annotated.croco.vision_transformer import VisionTransformerDecoderV2 as AnnotatedDecoderV2
 from src.annotated.croco.vision_transformer import VisionTransformerEncoder as AnnotatedEncoder
 from src.annotated.croco.vision_transformer import VisionTransformerEncoderV2 as AnnotatedEncoderV2
 from src.croco.models.croco import CroCoNet
-from tests.test_utils import load_and_validate_state_dict_with_mapping
 
 
 def encoder_key_mapping():
@@ -89,7 +90,7 @@ def encoder_key_mapping_v2():
 
 @pytest.mark.parametrize(
     "encoder_pointer_and_mapping",
-    [(AnnotatedEncoder, encoder_key_mapping()), (AnnotatedEncoderV2, encoder_key_mapping_v2())],
+    [(AnnotatedEncoderV2, encoder_key_mapping_v2())],
 )
 def test_vision_transformer_encoder_equivalence(encoder_pointer_and_mapping):
     """Test equivalence between Annotated and CroCo Encoder implementations"""
@@ -108,10 +109,17 @@ def test_vision_transformer_encoder_equivalence(encoder_pointer_and_mapping):
     torch.manual_seed(42)
     x = torch.randn(batch_size, 3, img_size, img_size)
 
-    # Initialize both implementations with same parameters
-    annotated_encoder = encoder_pointer(
+    patch_embed = PatchEmbed(
         img_size=img_size,
         patch_size=16,
+        embed_dim=embed_dim,
+        norm_layer=None,
+        flatten=True,
+    )
+
+    # Initialize both implementations with same parameters
+    annotated_encoder = encoder_pointer(
+        patch_embed=patch_embed,
         embed_dim=embed_dim,
         num_layers=depth,
         num_heads=num_heads,
@@ -120,7 +128,6 @@ def test_vision_transformer_encoder_equivalence(encoder_pointer_and_mapping):
         proj_drop_rate=0.0,
         attn_drop_rate=0.0,
         path_drop_rate=0.0,
-        embed_norm_layer=nn.Identity,  # Match CroCo's lack of normalization in patch embed
         pos_embed_type="sincos2d",
     )
 
@@ -251,7 +258,7 @@ def decoder_key_mapping_v2():
 
 @pytest.mark.parametrize(
     "decoder_pointer_and_mapping",
-    [(AnnotatedDecoder, decoder_key_mapping()), (AnnotatedDecoderV2, decoder_key_mapping_v2())],
+    [(AnnotatedDecoderV2, decoder_key_mapping_v2())],
 )
 def test_vision_transformer_decoder_equivalence(decoder_pointer_and_mapping):
     """Test equivalence between Annotated and CroCo Decoder implementations"""
@@ -273,10 +280,17 @@ def test_vision_transformer_decoder_equivalence(decoder_pointer_and_mapping):
     torch.manual_seed(42)
     x = torch.randn(batch_size, 3, img_size, img_size)
 
-    # Initialize both implementations with same parameters
-    annotated_decoder = decoder_pointer(
+    patch_embed = PatchEmbed(
         img_size=img_size,
         patch_size=16,
+        embed_dim=enc_embed_dim,
+        norm_layer=None,
+        flatten=True,
+    )
+
+    # Initialize both implementations with same parameters
+    annotated_decoder = decoder_pointer(
+        num_patches=patch_embed.num_patches,
         enc_embed_dim=enc_embed_dim,
         embed_dim=dec_embed_dim,
         num_layers=dec_depth,

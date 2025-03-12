@@ -1,11 +1,11 @@
 import pytest
 import torch
 import torch.nn as nn
+from test_utils import load_and_validate_state_dict_with_mapping
 
 from src.annotated.croco.encoder_block import TransformerEncoderBlock as AnnotatedEncoderBlock
 from src.annotated.croco.encoder_block import TransformerEncoderBlockV2 as AnnotatedEncoderBlockV2
 from src.croco.models.blocks import Block as CrocoBlock
-from tests.test_utils import load_and_validate_state_dict_with_mapping
 
 
 def test_encoder_block_initialization():
@@ -137,7 +137,7 @@ def test_encoder_block_v2_equivalence():
 
     # Test forward pass
     with torch.no_grad():
-        annotated_out = annotated_block(x)
+        annotated_out = annotated_block(x, pos, pos)
         croco_out = croco_block(x, pos)
 
         # Test outputs are close

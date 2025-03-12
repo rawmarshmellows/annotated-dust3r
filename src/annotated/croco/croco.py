@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
+from .patch_embed import PatchEmbed
 from .patchify import patchify, unpatchify
 from .vision_transformer import VisionTransformerDecoderV2, VisionTransformerEncoderV2
 
@@ -28,14 +29,17 @@ class AnnotatedCroCo(nn.Module):
     ):
         super().__init__()
 
-        self.patch_size = patch_size
-
         # Create encoder
         self.encoder = VisionTransformerEncoderV2(
-            img_size=img_size,
-            patch_size=patch_size,
+            patch_embed=PatchEmbed(
+                img_size,
+                patch_size,
+                in_channels=3,
+                embed_dim=enc_embed_dim,
+                norm_layer=None,  # Match CroCo's lack of normalization in patch embed
+                flatten=True,
+            ),
             mask_ratio=mask_ratio,
-            in_channels=3,
             embed_dim=enc_embed_dim,
             num_layers=enc_depth,
             num_heads=enc_num_heads,
@@ -45,13 +49,12 @@ class AnnotatedCroCo(nn.Module):
             attn_drop_rate=0.0,
             path_drop_rate=0.0,
             norm_layer=norm_layer,
-            embed_norm_layer=None,  # Match CroCo's lack of normalization in patch embed
             pos_embed_type="sincos2d" if pos_embed == "cosine" else pos_embed,
         )
 
         # Create decoder
         self.decoder = VisionTransformerDecoderV2(
-            patch_size=patch_size,
+            num_patches=self.encoder.patch_embed.num_patches,
             enc_embed_dim=enc_embed_dim,
             embed_dim=dec_embed_dim,
             num_heads=dec_num_heads,
@@ -64,7 +67,6 @@ class AnnotatedCroCo(nn.Module):
             norm_layer=norm_layer,
             norm_mem=norm_im2_in_dec,
             pos_embed_type="sincos2d" if pos_embed == "cosine" else pos_embed,
-            img_size=img_size,
         )
 
         # prediction head
@@ -73,7 +75,7 @@ class AnnotatedCroCo(nn.Module):
     def set_downstream_head(self):
         """Set up the downstream head for the model."""
         n_colors = 3
-        n_pixels_in_patch = self.patch_size**2
+        n_pixels_in_patch = self.encoder.patch_embed.patch_size[0] * self.encoder.patch_embed.patch_size[1]
         self.prediction_head = nn.Linear(self.decoder.embed_dim, n_pixels_in_patch * n_colors, bias=True)
 
         # Initialize prediction head
@@ -137,7 +139,7 @@ class AnnotatedCroCo(nn.Module):
         Returns:
             Patches of shape (B, L, patch_size**2 * 3)
         """
-        return patchify(imgs, self.patch_size)[0]  # Return only the patches
+        return patchify(imgs, self.encoder.patch_embed.patch_size)[0]  # Return only the patches
 
     def unpatchify(self, x: Tensor, channels: int = 3) -> Tensor:
         """
@@ -150,7 +152,7 @@ class AnnotatedCroCo(nn.Module):
         Returns:
             Images of shape (B, channels, H, W)
         """
-        return unpatchify(x, self.patch_size, channels=channels)[0]  # Return only the images
+        return unpatchify(x, self.encoder.patch_embed.patch_size, channels=channels)[0]  # Return only the images
 
     def forward(self, img1: Tensor, img2: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """

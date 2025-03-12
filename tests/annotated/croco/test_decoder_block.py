@@ -1,11 +1,11 @@
 import pytest
 import torch
 import torch.nn as nn
+from test_utils import load_and_validate_state_dict_with_mapping
 
 from src.annotated.croco.decoder_block import TransformerDecoderBlock as AnnotatedDecoderBlock
 from src.annotated.croco.decoder_block import TransformerDecoderBlockV2 as AnnotatedDecoderBlockV2
 from src.croco.models.blocks import DecoderBlock as CroCoDecoderBlock
-from tests.test_utils import load_and_validate_state_dict_with_mapping
 
 
 def test_decoder_block_v2_equivalence():

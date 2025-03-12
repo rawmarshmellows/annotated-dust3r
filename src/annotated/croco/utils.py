@@ -15,4 +15,8 @@ def to_2tuple(x):
     """
     if isinstance(x, tuple):
         return x
+
+    if isinstance(x, list):
+        return tuple(x)
+
     return (x, x)
