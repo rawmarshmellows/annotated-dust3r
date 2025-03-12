@@ -1,12 +1,12 @@
 import pytest
 import torch
 import torch.nn as nn
+from test_utils import load_and_validate_state_dict_with_mapping
 
 from src.annotated.croco.attention import Attention as AnnotatedAttention
 from src.annotated.croco.attention import CrossAttention as AnnotatedCrossAttention
 from src.croco.models.blocks import Attention as CrocoAttention
 from src.croco.models.blocks import CrossAttention as CrocoCrossAttention
-from tests.test_utils import load_and_validate_state_dict_with_mapping
 
 
 def test_cross_attention_equivalence():

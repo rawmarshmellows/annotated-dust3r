@@ -306,10 +306,8 @@ class VisionTransformerDecoder(nn.Module):
 class VisionTransformerEncoderV2(nn.Module):
     def __init__(
         self,
-        img_size: int = 224,
-        patch_size: int = 16,
+        patch_embed: PatchEmbed,
         mask_ratio: float = 0.9,
-        in_channels: int = 3,
         embed_dim: int = 768,
         num_layers: int = 12,
         num_heads: int = 12,
@@ -319,15 +317,10 @@ class VisionTransformerEncoderV2(nn.Module):
         attn_drop_rate: float = 0.0,
         path_drop_rate: float = 0.0,
         norm_layer: Callable[..., nn.Module] = partial(nn.LayerNorm, eps=1e-6),
-        embed_norm_layer: Callable[..., nn.Module] = None,
         pos_embed_type: str = "sincos2d",
     ):
         super().__init__()
-        self.img_size = img_size
-        self.patch_size = patch_size
-        self.num_patches = (img_size // patch_size) ** 2
         self.mask_ratio = mask_ratio
-
         self.embed_dim = embed_dim
         self.num_layers = num_layers
         self.num_heads = num_heads
@@ -335,15 +328,8 @@ class VisionTransformerEncoderV2(nn.Module):
         self.qkv_bias = qkv_bias
         self.norm_layer = norm_layer
         self.pos_embed_type = pos_embed_type
-        self.patch_embed = PatchEmbed(
-            img_size,
-            patch_size,
-            in_channels=in_channels,
-            embed_dim=embed_dim,
-            norm_layer=embed_norm_layer,
-            flatten=True,
-        )
-        self.mask_generator = RandomMask(self.num_patches, self.mask_ratio)
+        self.patch_embed = patch_embed
+        self.mask_generator = RandomMask(self.patch_embed.num_patches, self.mask_ratio)
         self.norm = norm_layer(embed_dim)
 
         if self.pos_embed_type == "sincos2d":
@@ -351,7 +337,7 @@ class VisionTransformerEncoderV2(nn.Module):
                 register_named_buffer_fn=partial(self.register_buffer, name="enc_pos_embed"),
                 get_buffer_fn=lambda: self.enc_pos_embed,
                 embed_dim=self.embed_dim,
-                num_patches=self.num_patches,
+                num_patches=self.patch_embed.num_patches,
             )
             self.blocks = nn.ModuleList(
                 [
@@ -416,7 +402,7 @@ class VisionTransformerEncoderV2(nn.Module):
 
         batch_size, num_patches, embed_dim = image_patches.shape
         ic(image_patches.shape)
-        assert num_patches == self.num_patches, f"Expected {self.num_patches} patches, got {num_patches}"
+        assert num_patches == self.patch_embed.num_patches, f"Expected {self.num_patches} patches, got {num_patches}"
 
         # 2. Add positional embeddings
         if isinstance(self.positional_embedder, SinCos2dPositionalEmbedder):
@@ -478,7 +464,7 @@ class VisionTransformerDecoderV2(nn.Module):
 
     def __init__(
         self,
-        patch_size: int,
+        num_patches: int,
         enc_embed_dim: int,
         embed_dim: int,
         num_heads: int = 8,
@@ -492,24 +478,10 @@ class VisionTransformerDecoderV2(nn.Module):
         norm_mem: bool = True,
         act_layer: Callable[..., nn.Module] = nn.GELU,
         pos_embed_type: str = "sincos2d",
-        rope: nn.Module = None,
-        img_size: int = None,
-        num_patches: int = None,
     ):
         super().__init__()
 
-        # make sure either img_size or num_patches is defined, but not both
-        if not ((img_size is None) ^ (num_patches is None)):
-            raise ValueError(
-                f"Exactly one of img_size or num_patches must be defined, got img_size={img_size}, num_patches={num_patches}"
-            )
-
-        if num_patches is None:
-            self.num_patches: int = (img_size // patch_size) ** 2
-        else:
-            self.num_patches: int = num_patches
-
-        self.patch_size = patch_size
+        self.num_patches = num_patches
         self.embed_dim = embed_dim
         self.decoder_embed = nn.Linear(enc_embed_dim, embed_dim, bias=True)
         self.pos_embed_type = pos_embed_type

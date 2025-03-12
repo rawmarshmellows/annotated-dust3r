@@ -7,7 +7,7 @@ from src.annotated.croco.patchify import patchify, unpatchify
 def test_patchify_unpatchify_round_trip():
     """Test that unpatchify(patchify(imgs)) == imgs for random tensors."""
     B, C, H, W = 2, 3, 128, 128  # Square images
-    patch_size = 32
+    patch_size = (32, 32)
     imgs = torch.randn(B, C, H, W)
 
     patches, num_patches_h, num_patches_w = patchify(imgs, patch_size)
@@ -22,7 +22,7 @@ def test_patchify_unpatchify_specific_case():
     """Test patchify and unpatchify with a specific tensor where the outcome is known."""
     # Create a simple tensor where each pixel value is unique
     B, C, H, W = 1, 1, 4, 6  # Non-square image
-    patch_size = 2
+    patch_size = (2, 2)
     imgs = torch.arange(B * C * H * W).reshape(B, C, H, W).float()
 
     # Expected patches:
@@ -58,7 +58,7 @@ def test_patchify_unpatchify_specific_case():
 def test_patchify_unpatchify_non_square():
     """Test patchify and unpatchify with non-square images."""
     B, C, H, W = 1, 3, 64, 32  # Non-square image
-    patch_size = 16
+    patch_size = (16, 16)
     imgs = torch.randn(B, C, H, W)
 
     patches, num_patches_h, num_patches_w = patchify(imgs, patch_size)
@@ -71,7 +71,7 @@ def test_invalid_inputs():
     """Test that the functions handle invalid inputs gracefully."""
     # Image dimensions not divisible by patch_size
     B, C, H, W = 1, 3, 65, 33  # Not divisible by 16
-    patch_size = 16
+    patch_size = (16, 16)
     imgs = torch.randn(B, C, H, W)
 
     with pytest.raises(AssertionError, match="Image dimensions must be divisible by the patch size"):
