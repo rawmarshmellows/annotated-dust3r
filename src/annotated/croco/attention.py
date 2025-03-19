@@ -343,6 +343,22 @@ class MultiHeadAttentionV2(nn.Module):
         # multi_head_key shape: (batch_size, num_heads, num_key_patches, head_dim)
         # multi_head_key.transpose shape: (batch_size, num_heads, head_dim, num_key_patches)
         # Result shape: (batch_size, num_heads, num_query_patches, num_key_patches)
+        # This forms the attention scores matrix, the queries are the rows and the keys are the columns
+        # A high value means that for a given query, the key is highly relevant
+        # A low value means that the query is not very relevant to the key
+        # For example: https://youtu.be/0VLAoVGf_74?si=-BnAC60ydiJjvSno&t=156
+
+        # In the context image patches a relevant query, key pair would be a query patch that is
+        # very relevant to the key patch for example, with CroCo, a query patch that may be very relevant
+        # to the key patch in the context of the image would be a patch whereby the patch in the query has an object
+        # that is the same as the object in the key patch
+
+        # Input shape:
+        # multi_head_query: (batch_size, num_heads, num_query_patches, head_dim)
+        # multi_head_key: (batch_size, num_heads, head_dim, num_key_patches)
+
+        # Result shape:
+        # attention_scores: (batch_size, num_heads, num_query_patches, num_key_patches)
         attention_scores = (multi_head_query @ multi_head_key.transpose(-2, -1)) * self.attention_scale
 
         # 2. Convert scores to probabilities with softmax

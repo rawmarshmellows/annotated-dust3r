@@ -28,6 +28,10 @@ class AnnotatedCroCo(nn.Module):
         pos_embed: str = "cosine",  # positional embedding (either cosine or RoPE100)
     ):
         super().__init__()
+        self.enc_depth = enc_depth
+        self.dec_depth = dec_depth
+        self.enc_embed_dim = enc_embed_dim
+        self.dec_embed_dim = dec_embed_dim
 
         # Create encoder
         self.encoder = VisionTransformerEncoderV2(
@@ -70,12 +74,13 @@ class AnnotatedCroCo(nn.Module):
         )
 
         # prediction head
+        self.patch_size = self.encoder.patch_embed.patch_size
         self.set_downstream_head()
 
     def set_downstream_head(self):
         """Set up the downstream head for the model."""
         n_colors = 3
-        n_pixels_in_patch = self.encoder.patch_embed.patch_size[0] * self.encoder.patch_embed.patch_size[1]
+        n_pixels_in_patch = self.patch_size[0] * self.patch_size[1]
         self.prediction_head = nn.Linear(self.decoder.embed_dim, n_pixels_in_patch * n_colors, bias=True)
 
         # Initialize prediction head

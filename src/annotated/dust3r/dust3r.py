@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
+from ...utils import load_and_validate_state_dict_with_mapping
 from ..croco.croco import AnnotatedCroCo
 from .heads import head_factory
 from .utils import fill_default_args, freeze_all_params, interleave, is_symmetrized, transpose_to_landscape
@@ -14,6 +15,10 @@ from .utils import fill_default_args, freeze_all_params, interleave, is_symmetri
 
 def load_model(model_path, device):
     ckpt = torch.load(model_path, map_location="cpu")
+
+    import pdb
+
+    pdb.set_trace()
 
     args = ckpt["args"].model.replace("ManyAR_PatchEmbed", "PatchEmbedDust3R")
     if "landscape_only" not in args:
@@ -35,6 +40,377 @@ class AnnotatedAsymmetricCroCo3DStereo(
 ):
     """Annotated version of AsymmetricCroCo3DStereo."""
 
+    @classmethod
+    def from_pretrained_naver_DUSt3R_ViTLarge_BaseDecoder_512_dpt(cls, model_to_be_initialized_from):
+        # Define key mapping between original and annotated models
+        encoder_key_mapping = {
+            "patch_embed.proj.weight": "encoder.patch_embed.proj.weight",
+            "patch_embed.proj.bias": "encoder.patch_embed.proj.bias",
+            "enc_norm.weight": "encoder.norm.weight",
+            "enc_norm.bias": "encoder.norm.bias",
+        }
+
+        for i in range(24):
+            # Attention layers
+            encoder_key_mapping[f"enc_blocks.{i}.attn.qkv.weight"] = (
+                f"encoder.blocks.{i}.query_key_value_projection.weight"
+            )
+            encoder_key_mapping[f"enc_blocks.{i}.attn.qkv.bias"] = (
+                f"encoder.blocks.{i}.query_key_value_projection.bias"
+            )
+            encoder_key_mapping[f"enc_blocks.{i}.attn.proj.weight"] = (
+                f"encoder.blocks.{i}.attn.output_projection.weight"
+            )
+            encoder_key_mapping[f"enc_blocks.{i}.attn.proj.bias"] = f"encoder.blocks.{i}.attn.output_projection.bias"
+
+            # Norm layers
+            encoder_key_mapping[f"enc_blocks.{i}.norm1.weight"] = f"encoder.blocks.{i}.norm1.weight"
+            encoder_key_mapping[f"enc_blocks.{i}.norm1.bias"] = f"encoder.blocks.{i}.norm1.bias"
+            encoder_key_mapping[f"enc_blocks.{i}.norm2.weight"] = f"encoder.blocks.{i}.norm2.weight"
+            encoder_key_mapping[f"enc_blocks.{i}.norm2.bias"] = f"encoder.blocks.{i}.norm2.bias"
+
+            # MLP layers
+            encoder_key_mapping[f"enc_blocks.{i}.mlp.fc1.weight"] = f"encoder.blocks.{i}.mlp.fc1.weight"
+            encoder_key_mapping[f"enc_blocks.{i}.mlp.fc1.bias"] = f"encoder.blocks.{i}.mlp.fc1.bias"
+            encoder_key_mapping[f"enc_blocks.{i}.mlp.fc2.weight"] = f"encoder.blocks.{i}.mlp.fc2.weight"
+            encoder_key_mapping[f"enc_blocks.{i}.mlp.fc2.bias"] = f"encoder.blocks.{i}.mlp.fc2.bias"
+
+        decoder_key_mapping = {
+            "decoder_embed.weight": "decoder.decoder_embed.weight",
+            "decoder_embed.bias": "decoder.decoder_embed.bias",
+            "dec_norm.weight": "decoder.norm.weight",
+            "dec_norm.bias": "decoder.norm.bias",
+            "mask_token": "decoder.mask_token",
+        }
+
+        # # Add mappings for each decoder block
+        for i in range(12):
+            # Source image decoder - Attention layers
+            decoder_key_mapping[f"dec_blocks.{i}.attn.qkv.weight"] = (
+                f"decoder.blocks.{i}.self_attend_query_key_value_projection.weight"
+            )
+            decoder_key_mapping[f"dec_blocks.{i}.attn.qkv.bias"] = (
+                f"decoder.blocks.{i}.self_attend_query_key_value_projection.bias"
+            )
+            decoder_key_mapping[f"dec_blocks.{i}.attn.proj.weight"] = (
+                f"decoder.blocks.{i}.self_attn.output_projection.weight"
+            )
+            decoder_key_mapping[f"dec_blocks.{i}.attn.proj.bias"] = (
+                f"decoder.blocks.{i}.self_attn.output_projection.bias"
+            )
+
+            # Source image decoder - Cross attention layers
+            decoder_key_mapping[f"dec_blocks.{i}.cross_attn.projq.weight"] = (
+                f"decoder.blocks.{i}.cross_attn_query_projection.weight"
+            )
+            decoder_key_mapping[f"dec_blocks.{i}.cross_attn.projq.bias"] = (
+                f"decoder.blocks.{i}.cross_attn_query_projection.bias"
+            )
+            decoder_key_mapping[f"dec_blocks.{i}.cross_attn.projk.weight"] = (
+                f"decoder.blocks.{i}.cross_attn_key_projection.weight"
+            )
+            decoder_key_mapping[f"dec_blocks.{i}.cross_attn.projk.bias"] = (
+                f"decoder.blocks.{i}.cross_attn_key_projection.bias"
+            )
+            decoder_key_mapping[f"dec_blocks.{i}.cross_attn.projv.weight"] = (
+                f"decoder.blocks.{i}.cross_attn_value_projection.weight"
+            )
+            decoder_key_mapping[f"dec_blocks.{i}.cross_attn.projv.bias"] = (
+                f"decoder.blocks.{i}.cross_attn_value_projection.bias"
+            )
+            decoder_key_mapping[f"dec_blocks.{i}.cross_attn.proj.weight"] = (
+                f"decoder.blocks.{i}.cross_attn.output_projection.weight"
+            )
+            decoder_key_mapping[f"dec_blocks.{i}.cross_attn.proj.bias"] = (
+                f"decoder.blocks.{i}.cross_attn.output_projection.bias"
+            )
+
+            # Source image decoder - Norm layers
+            decoder_key_mapping[f"dec_blocks.{i}.norm1.weight"] = f"decoder.blocks.{i}.norm1.weight"
+            decoder_key_mapping[f"dec_blocks.{i}.norm1.bias"] = f"decoder.blocks.{i}.norm1.bias"
+            decoder_key_mapping[f"dec_blocks.{i}.norm2.weight"] = f"decoder.blocks.{i}.norm2.weight"
+            decoder_key_mapping[f"dec_blocks.{i}.norm2.bias"] = f"decoder.blocks.{i}.norm2.bias"
+            decoder_key_mapping[f"dec_blocks.{i}.norm3.weight"] = f"decoder.blocks.{i}.norm3.weight"
+            decoder_key_mapping[f"dec_blocks.{i}.norm3.bias"] = f"decoder.blocks.{i}.norm3.bias"
+            decoder_key_mapping[f"dec_blocks.{i}.norm_y.weight"] = f"decoder.blocks.{i}.norm_y.weight"
+            decoder_key_mapping[f"dec_blocks.{i}.norm_y.bias"] = f"decoder.blocks.{i}.norm_y.bias"
+
+            # Source image decoder - MLP layers
+            decoder_key_mapping[f"dec_blocks.{i}.mlp.fc1.weight"] = f"decoder.blocks.{i}.mlp.fc1.weight"
+            decoder_key_mapping[f"dec_blocks.{i}.mlp.fc1.bias"] = f"decoder.blocks.{i}.mlp.fc1.bias"
+            decoder_key_mapping[f"dec_blocks.{i}.mlp.fc2.weight"] = f"decoder.blocks.{i}.mlp.fc2.weight"
+            decoder_key_mapping[f"dec_blocks.{i}.mlp.fc2.bias"] = f"decoder.blocks.{i}.mlp.fc2.bias"
+
+            # Reference image decoder - Attention layers
+            decoder_key_mapping[f"dec_blocks2.{i}.attn.qkv.weight"] = (
+                f"dec_blocks2.{i}.self_attend_query_key_value_projection.weight"
+            )
+            decoder_key_mapping[f"dec_blocks2.{i}.attn.qkv.bias"] = (
+                f"dec_blocks2.{i}.self_attend_query_key_value_projection.bias"
+            )
+            decoder_key_mapping[f"dec_blocks2.{i}.attn.proj.weight"] = (
+                f"dec_blocks2.{i}.self_attn.output_projection.weight"
+            )
+            decoder_key_mapping[f"dec_blocks2.{i}.attn.proj.bias"] = (
+                f"dec_blocks2.{i}.self_attn.output_projection.bias"
+            )
+
+            # Reference image decoder - Cross attention layers
+            decoder_key_mapping[f"dec_blocks2.{i}.cross_attn.projq.weight"] = (
+                f"dec_blocks2.{i}.cross_attn_query_projection.weight"
+            )
+            decoder_key_mapping[f"dec_blocks2.{i}.cross_attn.projq.bias"] = (
+                f"dec_blocks2.{i}.cross_attn_query_projection.bias"
+            )
+            decoder_key_mapping[f"dec_blocks2.{i}.cross_attn.projk.weight"] = (
+                f"dec_blocks2.{i}.cross_attn_key_projection.weight"
+            )
+            decoder_key_mapping[f"dec_blocks2.{i}.cross_attn.projk.bias"] = (
+                f"dec_blocks2.{i}.cross_attn_key_projection.bias"
+            )
+            decoder_key_mapping[f"dec_blocks2.{i}.cross_attn.projv.weight"] = (
+                f"dec_blocks2.{i}.cross_attn_value_projection.weight"
+            )
+            decoder_key_mapping[f"dec_blocks2.{i}.cross_attn.projv.bias"] = (
+                f"dec_blocks2.{i}.cross_attn_value_projection.bias"
+            )
+            decoder_key_mapping[f"dec_blocks2.{i}.cross_attn.proj.weight"] = (
+                f"dec_blocks2.{i}.cross_attn.output_projection.weight"
+            )
+            decoder_key_mapping[f"dec_blocks2.{i}.cross_attn.proj.bias"] = (
+                f"dec_blocks2.{i}.cross_attn.output_projection.bias"
+            )
+
+            # Reference image decoder - Norm layers
+            decoder_key_mapping[f"dec_blocks2.{i}.norm1.weight"] = f"dec_blocks2.{i}.norm1.weight"
+            decoder_key_mapping[f"dec_blocks2.{i}.norm1.bias"] = f"dec_blocks2.{i}.norm1.bias"
+            decoder_key_mapping[f"dec_blocks2.{i}.norm2.weight"] = f"dec_blocks2.{i}.norm2.weight"
+            decoder_key_mapping[f"dec_blocks2.{i}.norm2.bias"] = f"dec_blocks2.{i}.norm2.bias"
+            decoder_key_mapping[f"dec_blocks2.{i}.norm3.weight"] = f"dec_blocks2.{i}.norm3.weight"
+            decoder_key_mapping[f"dec_blocks2.{i}.norm3.bias"] = f"dec_blocks2.{i}.norm3.bias"
+            decoder_key_mapping[f"dec_blocks2.{i}.norm_y.weight"] = f"dec_blocks2.{i}.norm_y.weight"
+            decoder_key_mapping[f"dec_blocks2.{i}.norm_y.bias"] = f"dec_blocks2.{i}.norm_y.bias"
+
+            # Reference image decoder - MLP layers
+            decoder_key_mapping[f"dec_blocks2.{i}.mlp.fc1.weight"] = f"dec_blocks2.{i}.mlp.fc1.weight"
+            decoder_key_mapping[f"dec_blocks2.{i}.mlp.fc1.bias"] = f"dec_blocks2.{i}.mlp.fc1.bias"
+            decoder_key_mapping[f"dec_blocks2.{i}.mlp.fc2.weight"] = f"dec_blocks2.{i}.mlp.fc2.weight"
+            decoder_key_mapping[f"dec_blocks2.{i}.mlp.fc2.bias"] = f"dec_blocks2.{i}.mlp.fc2.bias"
+
+        head_key_mapping = {}
+
+        for i in range(1, 3):
+            # Downstream head mappings
+            head_key_mapping[f"downstream_head{i}.dpt.act_postprocess.0.0.weight"] = (
+                f"downstream_head{i}.dpt.act_postprocess.0.0.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.act_postprocess.0.0.bias"] = (
+                f"downstream_head{i}.dpt.act_postprocess.0.0.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.act_postprocess.0.1.weight"] = (
+                f"downstream_head{i}.dpt.act_postprocess.0.1.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.act_postprocess.0.1.bias"] = (
+                f"downstream_head{i}.dpt.act_postprocess.0.1.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.act_postprocess.1.0.weight"] = (
+                f"downstream_head{i}.dpt.act_postprocess.1.0.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.act_postprocess.1.0.bias"] = (
+                f"downstream_head{i}.dpt.act_postprocess.1.0.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.act_postprocess.1.1.weight"] = (
+                f"downstream_head{i}.dpt.act_postprocess.1.1.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.act_postprocess.1.1.bias"] = (
+                f"downstream_head{i}.dpt.act_postprocess.1.1.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.act_postprocess.2.0.weight"] = (
+                f"downstream_head{i}.dpt.act_postprocess.2.0.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.act_postprocess.2.0.bias"] = (
+                f"downstream_head{i}.dpt.act_postprocess.2.0.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.act_postprocess.3.0.weight"] = (
+                f"downstream_head{i}.dpt.act_postprocess.3.0.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.act_postprocess.3.0.bias"] = (
+                f"downstream_head{i}.dpt.act_postprocess.3.0.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.act_postprocess.3.1.weight"] = (
+                f"downstream_head{i}.dpt.act_postprocess.3.1.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.act_postprocess.3.1.bias"] = (
+                f"downstream_head{i}.dpt.act_postprocess.3.1.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.head.0.weight"] = f"downstream_head{i}.dpt.head.0.weight"
+            head_key_mapping[f"downstream_head{i}.dpt.head.0.bias"] = f"downstream_head{i}.dpt.head.0.bias"
+            head_key_mapping[f"downstream_head{i}.dpt.head.2.weight"] = f"downstream_head{i}.dpt.head.2.weight"
+            head_key_mapping[f"downstream_head{i}.dpt.head.2.bias"] = f"downstream_head{i}.dpt.head.2.bias"
+            head_key_mapping[f"downstream_head{i}.dpt.head.4.weight"] = f"downstream_head{i}.dpt.head.4.weight"
+            head_key_mapping[f"downstream_head{i}.dpt.head.4.bias"] = f"downstream_head{i}.dpt.head.4.bias"
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.layer1_rn.weight"] = (
+                f"downstream_head{i}.dpt.scratch.layer1_rn.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.layer2_rn.weight"] = (
+                f"downstream_head{i}.dpt.scratch.layer2_rn.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.layer3_rn.weight"] = (
+                f"downstream_head{i}.dpt.scratch.layer3_rn.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.layer4_rn.weight"] = (
+                f"downstream_head{i}.dpt.scratch.layer4_rn.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.layer_rn.0.weight"] = (
+                f"downstream_head{i}.dpt.scratch.layer_rn.0.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.layer_rn.1.weight"] = (
+                f"downstream_head{i}.dpt.scratch.layer_rn.1.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.layer_rn.2.weight"] = (
+                f"downstream_head{i}.dpt.scratch.layer_rn.2.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.layer_rn.3.weight"] = (
+                f"downstream_head{i}.dpt.scratch.layer_rn.3.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.out_conv.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet1.out_conv.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.out_conv.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet1.out_conv.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv1.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv1.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv1.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv1.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv2.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv2.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv2.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv2.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv1.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv1.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv1.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv1.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv2.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv2.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv2.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv2.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.out_conv.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet2.out_conv.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.out_conv.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet2.out_conv.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv1.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv1.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv1.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv1.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv2.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv2.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv2.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv2.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv1.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv1.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv1.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv1.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv2.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv2.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv2.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv2.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.out_conv.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet3.out_conv.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.out_conv.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet3.out_conv.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv1.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv1.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv1.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv1.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv2.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv2.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv2.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv2.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv1.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv1.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv1.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv1.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv2.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv2.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv2.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv2.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.out_conv.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet4.out_conv.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.out_conv.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet4.out_conv.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv1.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv1.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv1.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv1.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv2.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv2.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv2.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv2.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv1.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv1.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv1.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv1.bias"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv2.weight"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv2.weight"
+            )
+            head_key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv2.bias"] = (
+                f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv2.bias"
+            )
+
+        model = cls(
+            output_mode=model_to_be_initialized_from.output_mode,
+            head_type=model_to_be_initialized_from.head_type,
+            depth_mode=model_to_be_initialized_from.depth_mode,
+            conf_mode=model_to_be_initialized_from.conf_mode,
+            freeze=model_to_be_initialized_from.freeze,
+            landscape_only=False,
+            patch_embed_cls=model_to_be_initialized_from.patch_embed_cls,
+            **model_to_be_initialized_from.croco_args,
+        )
+
+        load_and_validate_state_dict_with_mapping(
+            model, model_to_be_initialized_from, {**encoder_key_mapping, **decoder_key_mapping, **head_key_mapping}
+        )
+
+        return model
+
     def __init__(
         self,
         output_mode: str = "pts3d",
@@ -51,10 +427,6 @@ class AnnotatedAsymmetricCroCo3DStereo(
         self.croco_args = fill_default_args(croco_kwargs, super().__init__)
         assert "img_size" in self.croco_args, "img_size must be provided"
         self.img_size = self.croco_args["img_size"]
-
-        import pdb
-
-        pdb.set_trace()
 
         if isinstance(self.img_size, int):
             self.img_size = (self.img_size, self.img_size)
@@ -79,23 +451,6 @@ class AnnotatedAsymmetricCroCo3DStereo(
         # Set up the downstream heads and freeze parameters if needed
         self.set_freeze(freeze)
 
-    @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, **kw):
-        import pdb
-
-        pdb.set_trace()
-        if os.path.isfile(pretrained_model_name_or_path):
-            return load_model(pretrained_model_name_or_path, device="cpu")
-        else:
-            try:
-                model = super(AnnotatedAsymmetricCroCo3DStereo, cls).from_pretrained(
-                    pretrained_model_name_or_path, **kw
-                )
-            except TypeError as e:
-                print(e)
-                raise Exception(f"tried to load {pretrained_model_name_or_path} from huggingface, but failed")
-            return model
-
     def set_freeze(self, freeze: str):
         """Freeze specified parts of the model."""
         self.freeze = freeze
@@ -111,7 +466,7 @@ class AnnotatedAsymmetricCroCo3DStereo(
     ):
         """Set up the downstream heads for 3D prediction."""
         assert (
-            self.img_size[0] % self.patch_size == 0 and self.img_size[1] % self.patch_size == 0
+            self.img_size[0] % self.patch_size[0] == 0 and self.img_size[1] % self.patch_size[1] == 0
         ), f"{self.img_size} must be multiple of {self.patch_size=}"
 
         # Create the downstream heads

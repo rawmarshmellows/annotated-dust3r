@@ -6,7 +6,6 @@ from dust3r.model import AsymmetricCroCo3DStereo
 from src.annotated.dust3r.dust3r import AnnotatedAsymmetricCroCo3DStereo
 
 
-@pytest.mark.skip
 def test_asymmetric_croco_3d_equivalence():
     """Test that the annotated AsymmetricCroCo3DStereo is equivalent to the original."""
 
@@ -175,15 +174,28 @@ def test_asymmetric_croco_3d_equivalence():
                 ), f"Mismatch in {key}"
 
 
-@pytest.mark.skip
-def test_asymmetric_croco_3d_equivalence_from_pretrained():
+# @pytest.mark.skip
+def test_asymmetric_croco_3d_equivalence_from_pretrained_naver_DUSt3R_ViTLarge_BaseDecoder_512_dpt():
     """Test that the annotated AsymmetricCroCo3DStereo is equivalent to the original."""
 
     model_name = "naver/DUSt3R_ViTLarge_BaseDecoder_512_dpt"
 
     # Initialize models
-    annotated_model = AnnotatedAsymmetricCroCo3DStereo.from_pretrained(model_name)
     original_model = AsymmetricCroCo3DStereo.from_pretrained(model_name)
+
+    # annotated_model = AnnotatedAsymmetricCroCo3DStereo(
+    #     output_mode=original_model.output_mode,
+    #     head_type=original_model.head_type,
+    #     depth_mode=original_model.depth_mode,
+    #     conf_mode=original_model.conf_mode,
+    #     freeze=original_model.freeze,
+    #     landscape_only=False,
+    #     patch_embed_cls=original_model.patch_embed_cls,
+    #     **original_model.croco_args,
+    # )
+    annotated_model = AnnotatedAsymmetricCroCo3DStereo.from_pretrained_naver_DUSt3R_ViTLarge_BaseDecoder_512_dpt(
+        original_model
+    )
 
     # Define key mapping between original and annotated models
     key_mapping = {
@@ -198,18 +210,204 @@ def test_asymmetric_croco_3d_equivalence_from_pretrained():
         "dec_norm.weight": "decoder.norm.weight",
         "dec_norm.bias": "decoder.norm.bias",
         "mask_token": "decoder.mask_token",
-        # TODO: Ignored as only CroCo has prediction head, dust3r doesn't have one, need to abstract this
-        # Prediction head mappings
-        # "prediction_head.weight": "prediction_head.weight",
-        # "prediction_head.bias": "prediction_head.bias",
-        # Downstream head mappings
-        "downstream_head1.proj.weight": "downstream_head1.proj.weight",
-        "downstream_head1.proj.bias": "downstream_head1.proj.bias",
-        "downstream_head2.proj.weight": "downstream_head2.proj.weight",
-        "downstream_head2.proj.bias": "downstream_head2.proj.bias",
     }
 
-    for i in range(12):
+    for i in range(1, 3):
+        # Downstream head mappings
+        key_mapping[f"downstream_head{i}.dpt.act_postprocess.0.0.weight"] = (
+            f"downstream_head{i}.dpt.act_postprocess.0.0.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.act_postprocess.0.0.bias"] = (
+            f"downstream_head{i}.dpt.act_postprocess.0.0.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.act_postprocess.0.1.weight"] = (
+            f"downstream_head{i}.dpt.act_postprocess.0.1.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.act_postprocess.0.1.bias"] = (
+            f"downstream_head{i}.dpt.act_postprocess.0.1.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.act_postprocess.1.0.weight"] = (
+            f"downstream_head{i}.dpt.act_postprocess.1.0.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.act_postprocess.1.0.bias"] = (
+            f"downstream_head{i}.dpt.act_postprocess.1.0.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.act_postprocess.1.1.weight"] = (
+            f"downstream_head{i}.dpt.act_postprocess.1.1.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.act_postprocess.1.1.bias"] = (
+            f"downstream_head{i}.dpt.act_postprocess.1.1.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.act_postprocess.2.0.weight"] = (
+            f"downstream_head{i}.dpt.act_postprocess.2.0.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.act_postprocess.2.0.bias"] = (
+            f"downstream_head{i}.dpt.act_postprocess.2.0.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.act_postprocess.3.0.weight"] = (
+            f"downstream_head{i}.dpt.act_postprocess.3.0.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.act_postprocess.3.0.bias"] = (
+            f"downstream_head{i}.dpt.act_postprocess.3.0.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.act_postprocess.3.1.weight"] = (
+            f"downstream_head{i}.dpt.act_postprocess.3.1.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.act_postprocess.3.1.bias"] = (
+            f"downstream_head{i}.dpt.act_postprocess.3.1.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.head.0.weight"] = f"downstream_head{i}.dpt.head.0.weight"
+        key_mapping[f"downstream_head{i}.dpt.head.0.bias"] = f"downstream_head{i}.dpt.head.0.bias"
+        key_mapping[f"downstream_head{i}.dpt.head.2.weight"] = f"downstream_head{i}.dpt.head.2.weight"
+        key_mapping[f"downstream_head{i}.dpt.head.2.bias"] = f"downstream_head{i}.dpt.head.2.bias"
+        key_mapping[f"downstream_head{i}.dpt.head.4.weight"] = f"downstream_head{i}.dpt.head.4.weight"
+        key_mapping[f"downstream_head{i}.dpt.head.4.bias"] = f"downstream_head{i}.dpt.head.4.bias"
+        key_mapping[f"downstream_head{i}.dpt.scratch.layer1_rn.weight"] = (
+            f"downstream_head{i}.dpt.scratch.layer1_rn.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.layer2_rn.weight"] = (
+            f"downstream_head{i}.dpt.scratch.layer2_rn.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.layer3_rn.weight"] = (
+            f"downstream_head{i}.dpt.scratch.layer3_rn.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.layer4_rn.weight"] = (
+            f"downstream_head{i}.dpt.scratch.layer4_rn.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.layer_rn.0.weight"] = (
+            f"downstream_head{i}.dpt.scratch.layer_rn.0.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.layer_rn.1.weight"] = (
+            f"downstream_head{i}.dpt.scratch.layer_rn.1.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.layer_rn.2.weight"] = (
+            f"downstream_head{i}.dpt.scratch.layer_rn.2.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.layer_rn.3.weight"] = (
+            f"downstream_head{i}.dpt.scratch.layer_rn.3.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.out_conv.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet1.out_conv.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.out_conv.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet1.out_conv.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv1.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv1.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv1.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv1.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv2.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv2.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv2.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit1.conv2.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv1.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv1.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv1.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv1.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv2.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv2.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv2.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet1.resConfUnit2.conv2.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.out_conv.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet2.out_conv.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.out_conv.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet2.out_conv.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv1.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv1.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv1.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv1.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv2.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv2.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv2.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit1.conv2.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv1.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv1.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv1.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv1.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv2.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv2.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv2.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet2.resConfUnit2.conv2.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.out_conv.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet3.out_conv.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.out_conv.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet3.out_conv.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv1.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv1.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv1.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv1.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv2.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv2.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv2.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit1.conv2.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv1.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv1.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv1.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv1.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv2.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv2.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv2.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet3.resConfUnit2.conv2.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.out_conv.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet4.out_conv.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.out_conv.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet4.out_conv.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv1.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv1.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv1.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv1.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv2.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv2.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv2.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit1.conv2.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv1.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv1.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv1.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv1.bias"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv2.weight"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv2.weight"
+        )
+        key_mapping[f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv2.bias"] = (
+            f"downstream_head{i}.dpt.scratch.refinenet4.resConfUnit2.conv2.bias"
+        )
+
+    for i in range(24):
         # Attention layers
         key_mapping[f"enc_blocks.{i}.attn.qkv.weight"] = f"encoder.blocks.{i}.query_key_value_projection.weight"
         key_mapping[f"enc_blocks.{i}.attn.qkv.bias"] = f"encoder.blocks.{i}.query_key_value_projection.bias"
@@ -229,7 +427,7 @@ def test_asymmetric_croco_3d_equivalence_from_pretrained():
         key_mapping[f"enc_blocks.{i}.mlp.fc2.bias"] = f"encoder.blocks.{i}.mlp.fc2.bias"
 
     # # Add mappings for each decoder block
-    for i in range(8):
+    for i in range(12):
         # Source image decoder - Attention layers
         key_mapping[f"dec_blocks.{i}.attn.qkv.weight"] = (
             f"decoder.blocks.{i}.self_attend_query_key_value_projection.weight"
@@ -313,7 +511,7 @@ def test_asymmetric_croco_3d_equivalence_from_pretrained():
     with torch.no_grad():
         # Create sample inputs
         batch_size = 2
-        img_size = 224
+        img_size = 512
         view1 = {
             "img": torch.randn(batch_size, 3, img_size, img_size),
             "true_shape": torch.tensor([[img_size, img_size]] * batch_size),

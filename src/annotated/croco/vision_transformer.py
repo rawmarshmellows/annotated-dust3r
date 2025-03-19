@@ -412,8 +412,11 @@ class VisionTransformerEncoderV2(nn.Module):
         if do_mask:
             masks = self.mask_generator(image_patches)  # True indicates masked tokens
             ic(masks.shape)
-            # Keep only unmasked tokens (~masks inverts the mask)
+            ic("before image_patches[~masks].view(batch_size, -1, embed_dim)")
+            ic(image_patches.shape)
+            # Keep only unmasked tokens (~masks inverts the mask, and .view will re-arrange it to keep batch relevant tokens in batch)
             image_patches = image_patches[~masks].view(batch_size, -1, embed_dim)
+            ic("after image_patches[~masks].view(batch_size, -1, embed_dim)")
             ic(image_patches.shape)
             ic(patch_positions.shape)
             patch_positions_for_unmasked_patches = patch_positions[~masks].view(batch_size, -1, 2)
@@ -422,7 +425,7 @@ class VisionTransformerEncoderV2(nn.Module):
             masks = torch.zeros((batch_size, num_patches), dtype=torch.bool, device=image_patches.device)
             patch_positions_for_unmasked_patches = patch_positions
 
-        # 4. Apply transformer encoder blocks
+        # 4. Apply transformer encoder blocks on only the umasked_images
         if return_all_blocks:
             features = []
             for blk in self.blocks:
@@ -565,6 +568,7 @@ class VisionTransformerDecoderV2(nn.Module):
         decoder_embedded_reference_image_tokens = self.decoder_embed(reference_image_tokens)
 
         batch_size, num_tokens, embed_dim = decoder_embedded_source_image_tokens.size()
+        ic(decoder_embedded_source_image_tokens.size())
 
         if source_image_mask is None:
             decoder_embedded_source_image_tokens = decoder_embedded_source_image_tokens
@@ -593,10 +597,6 @@ class VisionTransformerDecoderV2(nn.Module):
         # Apply decoder blocks
         source_image_tokens_for_block = decoder_embedded_source_image_tokens
         reference_image_tokens_for_block = decoder_embedded_reference_image_tokens
-
-        ic(decoder_embedded_source_image_tokens.size())
-        ic(decoder_embedded_reference_image_tokens.size())
-        ic(decoder_embedded_source_image_tokens.size())
 
         if return_all_blocks:
             outputs = []
