@@ -1,7 +1,7 @@
 import torch
 
 from src.annotated.croco.mask_generator import RandomMask as AnnotatedRandomMask
-from src.croco.models.masking import RandomMask as CrocoRandomMask
+from src.vendored.croco.models.masking import RandomMask as CrocoRandomMask
 
 
 def test_random_mask_equivalence():

@@ -3,7 +3,7 @@ import torch
 from test_utils import load_and_validate_state_dict_with_mapping
 
 from src.annotated.croco.croco import AnnotatedCroCo
-from src.croco.models.croco import CroCoNet
+from src.vendored.croco.models.croco import CroCoNet
 
 
 @pytest.mark.parametrize("pos_embed", ["cosine", "RoPE100"])

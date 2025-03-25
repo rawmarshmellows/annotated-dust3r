@@ -9,7 +9,7 @@ from src.annotated.croco.vision_transformer import VisionTransformerDecoder as A
 from src.annotated.croco.vision_transformer import VisionTransformerDecoderV2 as AnnotatedDecoderV2
 from src.annotated.croco.vision_transformer import VisionTransformerEncoder as AnnotatedEncoder
 from src.annotated.croco.vision_transformer import VisionTransformerEncoderV2 as AnnotatedEncoderV2
-from src.croco.models.croco import CroCoNet
+from src.vendored.croco.models.croco import CroCoNet
 
 
 def encoder_key_mapping():

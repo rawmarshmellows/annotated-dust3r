@@ -9,14 +9,12 @@ from copy import deepcopy
 
 import huggingface_hub
 import torch
-from models.croco import CroCoNet  # noqa
 from packaging import version
 
-import dust3r.utils.path_to_croco  # noqa: F401
-from dust3r.patch_embed import get_patch_embed
-
+from ..croco.models.croco import CroCoNet  # noqa
 from .heads import head_factory
-from .utils.misc import fill_default_args, freeze_all_params, interleave, is_symmetrized, transpose_to_landscape
+from .patch_embed import get_patch_embed
+from .utils import fill_default_args, freeze_all_params, interleave, is_symmetrized, transpose_to_landscape
 
 inf = float("inf")
 
