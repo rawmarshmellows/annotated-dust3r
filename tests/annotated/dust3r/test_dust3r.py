@@ -2,8 +2,8 @@ import pytest
 import torch
 from test_utils import load_and_validate_state_dict_with_mapping
 
-from dust3r.model import AsymmetricCroCo3DStereo
 from src.annotated.dust3r.dust3r import AnnotatedAsymmetricCroCo3DStereo
+from src.vendored.dust3r.model import AsymmetricCroCo3DStereo
 
 
 def test_asymmetric_croco_3d_equivalence():
@@ -174,7 +174,6 @@ def test_asymmetric_croco_3d_equivalence():
                 ), f"Mismatch in {key}"
 
 
-# @pytest.mark.skip
 def test_asymmetric_croco_3d_equivalence_from_pretrained_naver_DUSt3R_ViTLarge_BaseDecoder_512_dpt():
     """Test that the annotated AsymmetricCroCo3DStereo is equivalent to the original."""
 

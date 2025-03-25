@@ -1,7 +1,7 @@
 import torch
 
 from src.annotated.croco.drop_path import DropPath as DropPathAnnotated
-from src.croco.models.blocks import DropPath
+from src.vendored.croco.models.blocks import DropPath
 
 
 def test_drop_path_equivalence():

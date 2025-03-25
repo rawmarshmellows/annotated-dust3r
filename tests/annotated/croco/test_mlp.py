@@ -3,7 +3,7 @@ import torch.nn as nn
 from test_utils import load_and_validate_state_dict_with_mapping
 
 from src.annotated.croco.mlp import Mlp as AnnotatedMLP
-from src.croco.models.blocks import Mlp as CrocoMLP
+from src.vendored.croco.models.blocks import Mlp as CrocoMLP
 
 
 def test_mlp_initialization():

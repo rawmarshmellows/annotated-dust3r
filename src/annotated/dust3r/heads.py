@@ -1,3 +1,5 @@
+# TODO: Refactor
+
 from typing import List
 
 import torch
@@ -5,10 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from icecream import ic
-from models.dpt_block import DPTOutputAdapter  # noqa
 
-import dust3r.utils.path_to_croco  # noqa: F401
-from dust3r.heads.postprocess import postprocess
+from .dpt_block import DPTOutputAdapter  # noqa
 
 
 def head_factory(head_type, output_mode, net, has_conf=False):

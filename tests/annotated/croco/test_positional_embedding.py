@@ -9,10 +9,10 @@ from src.annotated.croco.positional_embedding import (
 from src.annotated.croco.positional_embedding import (
     get_1d_sincos_pos_embed_from_grid as annotated_get_1d_sincos_pos_embed_from_grid,
 )
-from src.croco.models.pos_embed import (
+from src.vendored.croco.models.pos_embed import (
     get_1d_sincos_pos_embed_from_grid as croco_get_1d_sincos_pos_embed_from_grid,
 )
-from src.croco.models.pos_embed import (
+from src.vendored.croco.models.pos_embed import (
     get_2d_sincos_pos_embed,
 )
 

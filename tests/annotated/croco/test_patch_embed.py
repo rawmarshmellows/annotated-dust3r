@@ -5,7 +5,7 @@ import torch.nn as nn
 
 from src.annotated.croco.patch_embed import PatchEmbed as AnnotatedPatchEmbed
 from src.annotated.croco.patch_embed import PositionGetter
-from src.croco.models.blocks import PatchEmbed as CrocoPatchEmbed
+from src.vendored.croco.models.blocks import PatchEmbed as CrocoPatchEmbed
 
 
 def test_position_getter():
