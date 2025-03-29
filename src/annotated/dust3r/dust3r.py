@@ -1,10 +1,9 @@
-# TODO: Refactor
-
 import os
 from copy import deepcopy
 from typing import Any, Dict, Optional, Tuple
 
 import huggingface_hub
+import icecream as ic
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -17,10 +16,6 @@ from .utils import fill_default_args, freeze_all_params, interleave, is_symmetri
 
 def load_model(model_path, device):
     ckpt = torch.load(model_path, map_location="cpu")
-
-    import pdb
-
-    pdb.set_trace()
 
     args = ckpt["args"].model.replace("ManyAR_PatchEmbed", "PatchEmbedDust3R")
     if "landscape_only" not in args:
@@ -482,6 +477,7 @@ class AnnotatedAsymmetricCroCo3DStereo(
     def _encode_symmetrized(
         self, view1: Dict[str, Any], view2: Dict[str, Any]
     ) -> Tuple[Tuple[Tensor, Tensor], Tuple[Tensor, Tensor], Tuple[Tensor, Tensor]]:
+        print(self.__class__.__name__)
         """Encode image pairs with symmetrization support."""
         img1, img2 = view1["img"], view2["img"]
         B = img1.shape[0]
@@ -528,22 +524,40 @@ class AnnotatedAsymmetricCroCo3DStereo(
         return zip(*final_output)
 
     def forward(self, view1: Dict[str, Any], view2: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """Forward pass computing 3D predictions for both views."""
+        """Forward pass computing 3D predictions for both views.
+
+        Args:
+            view1: Dictionary containing first view data with keys:
+                - img: Tensor of shape (batch_size, 3, height, width) containing the image
+                - true_shape: Tensor of shape (batch_size, 2) with actual (height, width) of each image
+                - idx: Index identifier for the view (typically 0)
+                - instance: String identifier for the instance
+            view2: Dictionary containing second view data with the same structure as view1
+                  but representing a different viewpoint of the same scene
+
+        Returns:
+            Tuple containing two dictionaries with 3D predictions for each view:
+            - First dictionary: 3D predictions for view1
+            - Second dictionary: 3D predictions for view2, with "pts3d" renamed to
+              "pts3d_in_other_view" to indicate they're in view1's reference frame
+        """
         # Encode images
-        (shape1, shape2), (feat1, feat2), (pos1, pos2) = self._encode_symmetrized(view1, view2)
+        (shape_view1, shape_view2), (features_view1, features_view2), (positions_view1, positions_view2) = (
+            self._encode_symmetrized(view1, view2)
+        )
 
         # Decode features
-        dec1, dec2 = self._decoder(feat1, pos1, feat2, pos2)
+        decoded_view1, decoded_view2 = self._decoder(features_view1, positions_view1, features_view2, positions_view2)
 
         # Apply downstream heads
         with torch.cuda.amp.autocast(enabled=False):
-            res1 = self._downstream_head(1, [tok.float() for tok in dec1], shape1)
-            res2 = self._downstream_head(2, [tok.float() for tok in dec2], shape2)
+            results_view1 = self._downstream_head(1, [token.float() for token in decoded_view1], shape_view1)
+            results_view2 = self._downstream_head(2, [token.float() for token in decoded_view2], shape_view2)
 
         # Rename view2's 3D points to indicate they're in view1's frame
-        res2["pts3d_in_other_view"] = res2.pop("pts3d")
+        results_view2["pts3d_in_other_view"] = results_view2.pop("pts3d")
 
-        return res1, res2
+        return results_view1, results_view2
 
     def _downstream_head(self, head_num: int, decout: list[Tensor], img_shape: Tensor) -> Dict[str, Any]:
         """Apply the specified downstream head to decoder output."""

@@ -2,6 +2,7 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+from icecream import ic
 
 from .positional_embedding import PositionalEmbedderFactory
 
@@ -417,12 +418,17 @@ class MultiHeadAttentionWithRoPEV2(nn.Module):
         Returns:
             Tensor of shape (batch_size, query_length, embedding_dim)
         """
+        ic(self.__class__.__name__)
+        ic(query.shape, key.shape, value.shape, query_patch_positions.shape, key_patch_positions.shape)
 
         batch_size, num_query_patches, embedding_dim = query.shape
         num_key_patches = key.shape[1]
         num_value_patches = value.shape[1]
 
         assert num_key_patches == num_value_patches, "Key and value lengths must match"
+
+        ic(batch_size, num_query_patches, embedding_dim)
+        ic(num_key_patches, num_value_patches)
 
         # Project and reshape to multi-head format
         multi_head_query = (
@@ -433,6 +439,7 @@ class MultiHeadAttentionWithRoPEV2(nn.Module):
             # permute to (batch_size, self.num_heads, num_query_patches, head_dim)
             .permute(0, 2, 1, 3)
         )
+        ic(multi_head_query.shape)
 
         multi_head_key = (
             # project from (batch_size, num_key_patches, embedding_dim) to (batch_size, num_key_patches, self.num_heads, head_dim)
@@ -442,6 +449,7 @@ class MultiHeadAttentionWithRoPEV2(nn.Module):
             # permute to (batch_size, self.num_heads, num_key_patches, head_dim)
             .permute(0, 2, 1, 3)
         )
+        ic(multi_head_key.shape)
 
         multi_head_value = (
             # project from (batch_size, num_value_patches, embedding_dim) to (batch_size, num_value_patches, self.num_heads, head_dim)
@@ -451,9 +459,12 @@ class MultiHeadAttentionWithRoPEV2(nn.Module):
             # permute to (batch_size, self.num_heads, num_value_patches, head_dim)
             .permute(0, 2, 1, 3)
         )
+        ic(multi_head_value.shape)
 
         multi_head_query = self.positional_embedder.embed(multi_head_query, query_patch_positions)
         multi_head_key = self.positional_embedder.embed(multi_head_key, key_patch_positions)
+
+        ic(multi_head_query.shape, multi_head_key.shape)
 
         # 1. Compute attention scores: how much each query should attend to each key
         # multi_head_query shape: (batch_size, num_heads, num_query_patches, head_dim)
@@ -461,11 +472,13 @@ class MultiHeadAttentionWithRoPEV2(nn.Module):
         # multi_head_key.transpose shape: (batch_size, num_heads, head_dim, num_key_patches)
         # Result shape: (batch_size, num_heads, num_query_patches, num_key_patches)
         attention_scores = (multi_head_query @ multi_head_key.transpose(-2, -1)) * self.attention_scale
+        ic(attention_scores.shape)
 
         # 2. Convert scores to probabilities with softmax
         # This determines how much each query will "focus" on different keys
         attention_weights = attention_scores.softmax(dim=-1)
         attention_weights = self.attention_score_dropout(attention_weights)
+        ic(attention_weights.shape)
 
         # 3. Use attention weights to aggregate values
         # This creates a weighted sum of values for each query
@@ -475,9 +488,11 @@ class MultiHeadAttentionWithRoPEV2(nn.Module):
             .transpose(1, 2)
             .reshape(batch_size, num_query_patches, embedding_dim)
         )
+        ic(attended_values.shape)
 
         # Final projection and dropout
         output = self.output_projection(attended_values)
         output = self.output_dropout(output)
+        ic(output.shape)
 
         return output

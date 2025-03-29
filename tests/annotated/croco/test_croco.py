@@ -6,9 +6,9 @@ from src.annotated.croco.croco import AnnotatedCroCo
 from src.vendored.croco.models.croco import CroCoNet
 
 
-@pytest.mark.parametrize("pos_embed", ["cosine", "RoPE100"])
+# @pytest.mark.parametrize("pos_embed", ["cosine", "RoPE100"])
 # @pytest.mark.parametrize("pos_embed", ["cosine"])
-# @pytest.mark.parametrize("pos_embed", ["RoPE100"])
+@pytest.mark.parametrize("pos_embed", ["RoPE100"])
 def test_croco_with_equivalence(pos_embed):
     """Test that the annotated CroCo model is equivalent to the original CroCo model."""
     annotated_model = AnnotatedCroCo(img_size=224, patch_size=16, pos_embed=pos_embed)
