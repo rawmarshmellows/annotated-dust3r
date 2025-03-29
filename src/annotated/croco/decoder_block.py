@@ -164,9 +164,9 @@ class TransformerDecoderBlockV2(nn.Module):
 
     def forward(
         self,
-        source_image_tokens,
+        query_image_tokens,
         reference_image_tokens,
-        source_image_token_positions,
+        query_image_token_positions,
         reference_image_token_positions,
     ):
         """
@@ -180,80 +180,77 @@ class TransformerDecoderBlockV2(nn.Module):
         one-way flow of information from memory to input tokens.
 
         Args:
-            input_tokens: Tokens to be processed and updated, typically from a masked input image
-            memory_tokens: Reference tokens that remain unchanged, typically from a reference image
+            query_image_tokens: Tokens to be processed and updated, typically from a masked input image
+            reference_image_tokens: Reference tokens that remain unchanged, typically from a reference image
 
         Returns:
-            tuple: (processed_input_tokens, unchanged_memory_tokens)
-                  - processed_input_tokens have been updated through self-attention,
+            tuple: (processed_query_image_tokens, unchanged_reference_image_tokens)
+                  - processed_query_image_tokens have been updated through self-attention,
                     cross-attention with memory, and MLP processing
-                  - memory_tokens are returned unchanged as they only serve as a reference
+                  - reference_image_tokens are returned unchanged as they only serve as a reference
         """
         # Self-attention: Input tokens attend to each other
         # This allows each input token to gather information from other input tokens
-        ic(source_image_tokens.shape)
-        ic(reference_image_tokens.shape)
+        ic(self.__class__.__name__)
+        ic(query_image_tokens.shape, reference_image_tokens.shape)
 
-        self_attn_residual = source_image_tokens
-        normalized_source_image_tokens = self.norm1(source_image_tokens)
-        query_key_value_normalised_source_image_tokens = self.self_attend_query_key_value_projection(
-            normalized_source_image_tokens
+        self_attn_residual = query_image_tokens
+        normalized_query_image_tokens = self.norm1(query_image_tokens)
+
+        # Create the projection for the query, key, and value of the query image - in the context of CroCo this is a masked.
+        query_key_value_normalised_query_image_tokens = self.self_attend_query_key_value_projection(
+            normalized_query_image_tokens
         )
         (
-            query_for_normalized_source_image_tokens,
-            key_for_normalized_source_image_tokens,
-            value_for_normalized_source_image_tokens,
-        ) = query_key_value_normalised_source_image_tokens.split(self.embed_dim, dim=-1)
+            query_for_normalized_query_image_tokens,
+            key_for_normalized_query_image_tokens,
+            value_for_normalized_query_image_tokens,
+        ) = query_key_value_normalised_query_image_tokens.split(self.embed_dim, dim=-1)
 
-        ic(query_for_normalized_source_image_tokens.shape)
-        ic(key_for_normalized_source_image_tokens.shape)
-        ic(value_for_normalized_source_image_tokens.shape)
-        ic(source_image_token_positions.shape)
+        ic(query_for_normalized_query_image_tokens.shape)
+        ic(key_for_normalized_query_image_tokens.shape)
+        ic(value_for_normalized_query_image_tokens.shape)
+        ic(query_image_token_positions.shape)
 
-        source_attended_source_image_tokens = self.self_attn(
-            query_for_normalized_source_image_tokens,
-            key_for_normalized_source_image_tokens,
-            value_for_normalized_source_image_tokens,
-            source_image_token_positions,
-            source_image_token_positions,
+        # Perform the self-attention on the query image tokens
+        query_image_tokens = self.self_attn(
+            query_for_normalized_query_image_tokens,
+            key_for_normalized_query_image_tokens,
+            value_for_normalized_query_image_tokens,
+            query_image_token_positions,
+            query_image_token_positions,
         )
-        source_attended_source_image_tokens_with_residual = self_attn_residual + self.drop_path(
-            source_attended_source_image_tokens
-        )
+        query_image_tokens_with_residual = self_attn_residual + self.drop_path(query_image_tokens)
 
-        # Cross-attention: Input tokens attend to memory tokens
-        # Memory tokens are only used as key/value pairs - they provide information but aren't modified
-        normalized_source_attended_source_image_tokens_with_residual = self.norm2(
-            source_attended_source_image_tokens_with_residual
-        )
+        # Cross-attention: query image tokens attend to reference image tokens
+        normalized_query_image_tokens_with_residual = self.norm2(query_image_tokens_with_residual)
         normalized_reference_image_tokens = self.norm_y(reference_image_tokens)
 
-        # Create the query to be updated by the cross-attention
-        cross_attn_query = self.cross_attn_query_projection(
-            normalized_source_attended_source_image_tokens_with_residual
-        )
+        # Create the projection for the query - in the context of CroCo from a masked input image -
+        # and the key, and value of the reference image, typically from a reference image
+        cross_attn_query = self.cross_attn_query_projection(normalized_query_image_tokens_with_residual)
 
-        # Create the key and value to be used for the cross-attention
         cross_attn_key = self.cross_attn_key_projection(normalized_reference_image_tokens)
         cross_attn_value = self.cross_attn_value_projection(normalized_reference_image_tokens)
 
-        # Perform the cross-attention
-        cross_attented_input_tokens = self.cross_attn(
-            cross_attn_query,  # Query: input tokens being updated
-            cross_attn_key,  # Key: reference memory tokens
-            cross_attn_value,  # Value: reference memory tokens
-            source_image_token_positions,
+        # Perform the cross-attention, this is where the "filling in" of the masked query image tokens occurs
+        cross_attended_input_tokens = self.cross_attn(
+            cross_attn_query,  # Query: query image tokens being updated
+            cross_attn_key,  # Key: reference image tokens
+            cross_attn_value,  # Value: reference image tokens
+            query_image_token_positions,
             reference_image_token_positions,
         )
-        cross_attented_input_tokens_with_residual = source_attended_source_image_tokens_with_residual + self.drop_path(
-            cross_attented_input_tokens
+
+        # Add the residual of the output of the self-attended query image tokens to the output of the cross-attended query image tokens
+        cross_attended_input_tokens_with_residual = query_image_tokens_with_residual + self.drop_path(
+            cross_attended_input_tokens
         )
 
         # Final MLP processing of input tokens
-        # Memory tokens remain untouched while input tokens get final processing
-        normalized_cross_attented_input_tokens_with_residual = self.norm3(cross_attented_input_tokens_with_residual)
-        output = cross_attented_input_tokens_with_residual + self.drop_path(
-            self.mlp(normalized_cross_attented_input_tokens_with_residual)
+        normalized_cross_attended_input_tokens_with_residual = self.norm3(cross_attended_input_tokens_with_residual)
+        output = cross_attended_input_tokens_with_residual + self.drop_path(
+            self.mlp(normalized_cross_attended_input_tokens_with_residual)
         )
 
         return output, reference_image_tokens

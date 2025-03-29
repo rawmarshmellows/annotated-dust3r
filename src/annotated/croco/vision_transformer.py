@@ -395,13 +395,15 @@ class VisionTransformerEncoderV2(nn.Module):
                 final_output
         """
         ic(self.__class__.__name__)
+        ic(image.shape, do_mask, return_all_blocks)
+
         # 1. Create patches from input image
         image_patches, patch_positions = self.patch_embed(image)
-        ic(image_patches.shape)
-        ic(patch_positions.shape)
+        ic(image_patches.shape, patch_positions.shape)
 
         batch_size, num_patches, embed_dim = image_patches.shape
-        ic(image_patches.shape)
+        ic(batch_size, num_patches, embed_dim)
+
         assert num_patches == self.patch_embed.num_patches, f"Expected {self.num_patches} patches, got {num_patches}"
 
         # 2. Add positional embeddings
@@ -411,19 +413,15 @@ class VisionTransformerEncoderV2(nn.Module):
         # 3. Apply masking if requested
         if do_mask:
             masks = self.mask_generator(image_patches)  # True indicates masked tokens
-            ic(masks.shape)
-            ic("before image_patches[~masks].view(batch_size, -1, embed_dim)")
-            ic(image_patches.shape)
             # Keep only unmasked tokens (~masks inverts the mask, and .view will re-arrange it to keep batch relevant tokens in batch)
             image_patches = image_patches[~masks].view(batch_size, -1, embed_dim)
-            ic("after image_patches[~masks].view(batch_size, -1, embed_dim)")
-            ic(image_patches.shape)
-            ic(patch_positions.shape)
             patch_positions_for_unmasked_patches = patch_positions[~masks].view(batch_size, -1, 2)
-            ic(patch_positions_for_unmasked_patches.shape)
         else:
             masks = torch.zeros((batch_size, num_patches), dtype=torch.bool, device=image_patches.device)
             patch_positions_for_unmasked_patches = patch_positions
+
+        ic(image_patches.shape)
+        ic(patch_positions_for_unmasked_patches.shape)
 
         # 4. Apply transformer encoder blocks on only the umasked_images
         if return_all_blocks:
@@ -541,9 +539,9 @@ class VisionTransformerDecoderV2(nn.Module):
 
     def forward(
         self,
-        source_image_tokens: Tensor,
-        source_image_patch_positions: Tensor,
-        source_image_mask: Tensor | None,
+        query_image_tokens: Tensor,
+        query_image_patch_positions: Tensor,
+        query_image_mask: Tensor | None,
         reference_image_tokens: Tensor,
         reference_image_patch_positions: Tensor,
         return_all_blocks: bool = False,
@@ -564,59 +562,68 @@ class VisionTransformerDecoderV2(nn.Module):
             If return_all_blocks is True:
                 List of output tensors from each block
         """
-        decoder_embedded_source_image_tokens = self.decoder_embed(source_image_tokens)
+        ic(self.__class__.__name__)
+        ic(query_image_tokens.shape, query_image_patch_positions.shape, query_image_mask.shape)
+        ic(reference_image_tokens.shape, reference_image_patch_positions.shape)
+
+        decoder_embedded_query_image_tokens = self.decoder_embed(query_image_tokens)
         decoder_embedded_reference_image_tokens = self.decoder_embed(reference_image_tokens)
+        ic(decoder_embedded_query_image_tokens.shape, decoder_embedded_reference_image_tokens.shape)
 
-        batch_size, num_tokens, embed_dim = decoder_embedded_source_image_tokens.size()
-        ic(decoder_embedded_source_image_tokens.size())
+        batch_size, num_tokens, embed_dim = decoder_embedded_query_image_tokens.size()
 
-        if source_image_mask is None:
-            decoder_embedded_source_image_tokens = decoder_embedded_source_image_tokens
+        if query_image_mask is None:
+            decoder_embedded_query_image_tokens = decoder_embedded_query_image_tokens
         else:
-            fully_masked_source_image_tokens = self.mask_token.repeat(batch_size, self.num_patches, 1).to(
-                dtype=decoder_embedded_source_image_tokens.dtype
+            fully_masked_query_image_tokens = self.mask_token.repeat(batch_size, self.num_patches, 1).to(
+                dtype=decoder_embedded_query_image_tokens.dtype
             )
 
             # replace the masked source image tokens with the unmasked source image tokens
             # fully_masked_source_image_tokens[~source_image_mask] will be the indices of the unmasked source image tokens
-            fully_masked_source_image_tokens[~source_image_mask] = decoder_embedded_source_image_tokens.view(
+            fully_masked_query_image_tokens[~query_image_mask] = decoder_embedded_query_image_tokens.view(
                 batch_size * num_tokens, embed_dim
             )
 
-            decoder_embedded_source_image_tokens = fully_masked_source_image_tokens
+            decoder_embedded_query_image_tokens = fully_masked_query_image_tokens
+
+        ic(query_image_mask is None)
+        ic(decoder_embedded_query_image_tokens.shape)
 
         # Add positional embeddings if provided
         if self.positional_embedder is not None:
-            decoder_embedded_source_image_tokens = self.positional_embedder.embed(
-                decoder_embedded_source_image_tokens, source_image_patch_positions
+            decoder_embedded_query_image_tokens = self.positional_embedder.embed(
+                decoder_embedded_query_image_tokens, query_image_patch_positions
             )
             decoder_embedded_reference_image_tokens = self.positional_embedder.embed(
                 decoder_embedded_reference_image_tokens, reference_image_patch_positions
             )
 
         # Apply decoder blocks
-        source_image_tokens_for_block = decoder_embedded_source_image_tokens
+        query_image_tokens_for_block = decoder_embedded_query_image_tokens
         reference_image_tokens_for_block = decoder_embedded_reference_image_tokens
+
+        ic(query_image_tokens_for_block.shape, reference_image_tokens_for_block.shape)
 
         if return_all_blocks:
             outputs = []
             for i, blk in enumerate(self.blocks):
-                source_image_tokens_for_block, reference_image_tokens_for_block = blk(
-                    source_image_tokens_for_block,
+                query_image_tokens_for_block, reference_image_tokens_for_block = blk(
+                    query_image_tokens_for_block,
                     reference_image_tokens_for_block,
-                    source_image_patch_positions,
+                    query_image_patch_positions,
                     reference_image_patch_positions,
                 )
-                outputs.append(source_image_tokens_for_block)
+                outputs.append(query_image_tokens_for_block)
             outputs[-1] = self.norm(outputs[-1])
             return outputs
 
         for i, blk in enumerate(self.blocks):
-            source_image_tokens_for_block, reference_image_tokens_for_block = blk(
-                source_image_tokens_for_block,
+            query_image_tokens_for_block, reference_image_tokens_for_block = blk(
+                query_image_tokens_for_block,
                 reference_image_tokens_for_block,
-                source_image_patch_positions,
+                query_image_patch_positions,
                 reference_image_patch_positions,
             )
-        source_image_tokens_for_block = self.norm(source_image_tokens_for_block)
-        return source_image_tokens_for_block
+        query_image_tokens_for_block = self.norm(query_image_tokens_for_block)
+        return query_image_tokens_for_block

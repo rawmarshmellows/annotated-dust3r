@@ -1,6 +1,7 @@
 from typing import Callable
 
 import torch.nn as nn
+from icecream import ic
 
 from .attention import Attention, MultiHeadAttentionV2, MultiHeadAttentionWithRoPEV2
 from .drop_path import DropPath
@@ -146,10 +147,13 @@ class TransformerEncoderBlockV2(nn.Module):
         )
         self.norm2 = norm_layer(self.embed_dim)
 
-    def forward(self, input_tokens, query_patch_positions, key_patch_positions):
+    def forward(self, image_patches, query_patch_positions, key_patch_positions):
+        ic(self.__class__.__name__)
+        ic(image_patches.shape, query_patch_positions.shape, key_patch_positions.shape)
+
         # First block: Input -> Norm1 -> Attention -> Skip Connection
-        attn_residual = input_tokens  # Store input for skip connection
-        normalized = self.norm1(input_tokens)  # First normalization layer
+        attn_residual = image_patches  # Store input for skip connection
+        normalized = self.norm1(image_patches)  # First normalization layer
 
         # Create query, key, value tensors
         # query_key_value shape: (batch_size, seq_len, 3*embed_dim)
@@ -157,17 +161,22 @@ class TransformerEncoderBlockV2(nn.Module):
 
         # Split into query, key, value
         query, key, value = query_key_value.split(self.embed_dim, dim=-1)
+        ic(query.shape, key.shape, value.shape)
 
         attended = self.attn(
             query, key, value, query_patch_positions, key_patch_positions
         )  # Multi-head self-attention
+        ic(attended.shape)
+
         post_attention = attn_residual + self.drop_path(attended)  # Skip connection with drop path
+        ic(post_attention.shape)
 
         # Second block: Norm2 -> MLP -> Skip Connection
         mlp_residual = post_attention  # Store input for skip connection
         normalized = self.norm2(post_attention)  # Second normalization layer
         transformed = self.mlp(normalized)  # MLP layer
         output = mlp_residual + self.drop_path(transformed)  # Skip connection with drop path
+        ic(output.shape)
 
         return output
 

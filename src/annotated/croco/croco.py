@@ -3,6 +3,7 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+from icecream import ic
 from torch import Tensor
 
 from .patch_embed import PatchEmbed
@@ -107,6 +108,7 @@ class AnnotatedCroCo(nn.Module):
                 - masks: Boolean mask of shape (B, N) indicating which patches were masked'
             where N is the number of patches in the image.
         """
+
         return self.encoder(image, do_mask=do_mask, return_all_blocks=return_all_blocks)
 
     def _decoder(
@@ -175,13 +177,26 @@ class AnnotatedCroCo(nn.Module):
         """
         # encoder of the masked first image
         feat1, pos1, mask1 = self._encode_image(img1, do_mask=True)
+        ic(self.__class__.__name__)
+        ic(feat1.shape, pos1.shape, mask1.shape)
 
         # encoder of the second image
         feat2, pos2, _ = self._encode_image(img2, do_mask=False)
+        ic(self.__class__.__name__)
+        ic(feat2.shape, pos2.shape)
+
         # decoder
         decfeat = self._decoder(feat1, pos1, mask1, feat2, pos2)
+        ic(self.__class__.__name__)
+        ic(decfeat.shape)
+
         # prediction head
         out = self.prediction_head(decfeat)
+        ic(self.__class__.__name__)
+        ic(out.shape)
+
         # get target
         target = self.patchify(img1)
+        ic(self.__class__.__name__)
+        ic(target.shape)
         return out, mask1, target
