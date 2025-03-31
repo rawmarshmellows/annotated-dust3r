@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+from typing import Union
+
 import cv2
 import numpy as np
 import roma
@@ -6,8 +9,6 @@ import torch
 
 from .utils import compute_edge_scores, edge_str, geotrf, get_med_dist_between_poses, i_j_ij, inv, to_numpy, xy_grid
 
-from dataclasses import dataclass
-from typing import Union
 
 def minimum_spanning_tree_v2(
     imshapes,
@@ -194,10 +195,6 @@ def init_from_pts3d(self, pts3d, im_focals, im_poses):
         print(" init loss =", float(self()))
 
 
-
-
-
-
 @torch.no_grad()
 def init_minimum_spanning_tree(self, **kw):
     """Init all camera poses (image-wise and pairwise poses) given
@@ -236,23 +233,23 @@ def minimum_spanning_tree(
     niter_PnP=10,
     verbose=True,
 ):
-    import pickle
+    # import pickle
 
-    function_inputs = {
-        "imshapes": imshapes,
-        "edges": edges,
-        "pred_i": pred_i,
-        "pred_j": pred_j,
-        "conf_i": conf_i,
-        "conf_j": conf_j,
-        "im_conf": im_conf,
-        "min_conf_thr": min_conf_thr,
-        "device": device,
-        "has_im_poses": has_im_poses,
-        "niter_PnP": niter_PnP,
-        "verbose": verbose,
-    }
-    pickle.dump(function_inputs, open("msp_inputs.p", "wb"))
+    # function_inputs = {
+    #     "imshapes": imshapes,
+    #     "edges": edges,
+    #     "pred_i": pred_i,
+    #     "pred_j": pred_j,
+    #     "conf_i": conf_i,
+    #     "conf_j": conf_j,
+    #     "im_conf": im_conf,
+    #     "min_conf_thr": min_conf_thr,
+    #     "device": device,
+    #     "has_im_poses": has_im_poses,
+    #     "niter_PnP": niter_PnP,
+    #     "verbose": verbose,
+    # }
+    # pickle.dump(function_inputs, open("msp_inputs.p", "wb"))
 
     n_imgs = len(imshapes)
     sparse_graph = -dict_to_sparse_graph(compute_edge_scores(map(i_j_ij, edges), conf_i, conf_j))
@@ -339,6 +336,7 @@ def minimum_spanning_tree(
         im_poses = im_focals = None
 
     return pts3d, msp_edges, im_focals, im_poses
+
 
 def dict_to_sparse_graph(dic):
     n_imgs = max(max(e) for e in dic) + 1
@@ -468,7 +466,6 @@ def estimate_focal_knowing_depth(pts3d, pp, focal_mode="median", min_focal=0.0, 
     focal = focal.clip(min=min_focal * focal_base, max=max_focal * focal_base)
     # print(focal)
     return focal
-
 
 
 def get_known_poses(self):
