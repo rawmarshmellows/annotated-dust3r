@@ -73,6 +73,7 @@ def minimum_spanning_tree_v2(
     pts3d[i] = pred_i[i_j].clone()
     pts3d[j] = pred_j[i_j].clone()
     done = {i, j}
+
     if has_im_poses:
         # set the strongest edge to be the origin of the world
         im_poses[i] = torch.eye(4, device=device)
@@ -126,7 +127,7 @@ def minimum_spanning_tree_v2(
             if has_im_poses and im_poses[i] is None:
                 im_poses[i] = sRT_to_4x4(1, R, T, device)
         else:
-            # let's try again later
+            # let's try again later as the current edge isn't yet part of the scene that is registered
             todo.insert(0, (score, i, j))
 
     if has_im_poses:

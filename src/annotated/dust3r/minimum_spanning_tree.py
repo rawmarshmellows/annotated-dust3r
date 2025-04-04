@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import cv2
 import numpy as np
 import roma
@@ -8,16 +10,15 @@ import torch
 def minimum_spanning_tree_v2(
     imshapes,
     edges,
-    pred_i,
-    pred_j,
-    conf_i,
-    conf_j,
+    pred_source,
+    pred_target,
+    conf_source,
+    conf_target,
     im_conf,
     min_conf_thr,
     device,
     has_im_poses=True,
     niter_PnP=10,
-    verbose=True,
 ):
     """
     1. Calculate the mean edge score, computed from the average of each pixel in image
@@ -25,16 +26,96 @@ def minimum_spanning_tree_v2(
     3. Construct the global coordinate point map
     4. Calculate the focals for each image
     5. Calculate the global poses for each image using PnP
-    """
-    n_imgs = len(imshapes)
 
-    # calculate edge scores
+    Args:
+        imshapes: List of image shapes
+        edges: List of edges between images
+        pred_source: Dictionary mapping edge strings to source predictions
+        pred_target: Dictionary mapping edge strings to target predictions
+        conf_source: Dictionary mapping edge strings to source confidences
+        conf_target: Dictionary mapping edge strings to target confidences
+        im_conf: Image confidences
+        min_conf_thr: Minimum confidence threshold
+        device: Torch device
+        has_im_poses: Whether to compute image poses
+        niter_PnP: Number of PnP iterations
+
+    Returns:
+        pts3d: List of 3D points in world coordinates
+        msp_edges: List of edges in the maximum spanning tree
+        im_focals: List of focal lengths for each image
+        im_poses: List of poses for each image
+    """
+
+    # Step 1: Calculate edge scores and build the maximum spanning tree
+    n_imgs = len(imshapes)
+    edge_to_edge_confidence_score = compute_edge_scores(edges, pred_source, pred_target, conf_source, conf_target)
+    sparse_graph = construct_sparse_graph_ordered_by_negative_confidence_score(edge_to_edge_confidence_score, n_imgs)
+    maximum_spanning_tree_edges = extract_maximum_spanning_tree_edges(sparse_graph)
+
+    # Initialize data structures
+    pts3d = [None] * len(imshapes)  # 3D points in world coordinates
+    im_poses = [None] * n_imgs  # Camera poses in world coordinates
+    im_focals = [None] * n_imgs  # Focal lengths for each image
+    msp_edges = []  # Edges in the maximum spanning tree
+    done = set()  # Set of vertices already processed
+
+    # Step 2: Initialize with the strongest edge
+    strongest_edge = maximum_spanning_tree_edges.pop(0)
+    pts3d, im_poses, im_focals, done, msp_edges = initialize_tree_with_strongest_edge(
+        strongest_edge, pts3d, im_poses, im_focals, done, msp_edges, pred_source, pred_target, has_im_poses, device
+    )
+
+    # Step 3: Grow the tree by adding edges one by one
+    pts3d, im_poses, im_focals, done, msp_edges = grow_tree(
+        maximum_spanning_tree_edges.copy(),
+        pts3d,
+        im_poses,
+        im_focals,
+        done,
+        msp_edges,
+        pred_source,
+        pred_target,
+        conf_source,
+        conf_target,
+        has_im_poses,
+        device,
+    )
+
+    # Step 4: Complete missing information (focal lengths and poses)
+    # This step is crucial for creating a coherent 3D reconstruction
+    if has_im_poses:
+        im_poses, im_focals = complete_missing_information(
+            pts3d,
+            im_poses,
+            im_focals,
+            sparse_graph,
+            pred_source,
+            im_conf,
+            min_conf_thr,
+            device,
+            niter_PnP,
+            has_im_poses,
+            imshapes,
+        )
+    else:
+        im_poses = im_focals = None
+
+    return pts3d, msp_edges, im_focals, im_poses
+
+
+def compute_edge_scores(edges, pred_source, pred_target, conf_source, conf_target):
+    """Compute confidence scores for each edge based on average confidence."""
     edge_to_edge_confidence_score = {}
     for edge in edges:
         _edge_str = f"{edge[0]}_{edge[1]}"
-        edge_confidence_score = float(conf_i[_edge_str].mean() * conf_j[_edge_str].mean())
+        edge_confidence_score = float(conf_source[_edge_str].mean() * conf_target[_edge_str].mean())
         edge_to_edge_confidence_score[edge] = edge_confidence_score
+    return edge_to_edge_confidence_score
 
+
+def construct_sparse_graph_ordered_by_negative_confidence_score(edge_to_edge_confidence_score, n_imgs):
+    """Construct a sparse graph with negative confidence scores for minimum spanning tree."""
     # construct sparse graph
     sparse_graph = sp.dok_array((n_imgs, n_imgs))
     for edge, confidence_score in edge_to_edge_confidence_score.items():
@@ -42,110 +123,301 @@ def minimum_spanning_tree_v2(
         # scipy's minimum spanning tree algorithm to construct the
         # maximum spanning tree
         sparse_graph[edge] = -confidence_score
+    return sparse_graph
 
-    # create msp
-    msp = sp.csgraph.minimum_spanning_tree(sparse_graph).tocoo()
 
-    # create a list of tuples for (confidence_score, vertex_0_for_edge, vertex_1_for_edge)
-    todo = []
-    for negative_confidence_score, vertex_0_for_edge, vertex_1_for_edge in zip(msp.data, msp.row, msp.col):
-        # here to negate the confidence to get back the original value
-        confidence_score = -negative_confidence_score
-        todo.append((confidence_score, vertex_0_for_edge, vertex_1_for_edge))
+@dataclass
+class MaximumSpanningTreeEdge:
+    """Represents an edge in the maximum spanning tree with confidence score and vertices."""
 
-    # temp variable to store 3d points
-    # pts3d is the pointmap in world coordinates
-    pts3d = [None] * len(imshapes)
+    confidence: float
+    source_vertex: int
+    target_vertex: int
 
-    # im_poses is the pose in world coordinates
-    im_poses = [None] * n_imgs
-    im_focals = [None] * n_imgs
+    @property
+    def edge_str(self):
+        return f"{self.source_vertex}_{self.target_vertex}"
 
-    # init with strongest edge
-    score, i, j = todo.pop()
-    if verbose:
-        print(f" init edge ({i}*,{j}*) {score=}")
-    i_j = f"{i}_{j}"
-    pts3d[i] = pred_i[i_j].clone()
-    pts3d[j] = pred_j[i_j].clone()
-    done = {i, j}
+
+def extract_maximum_spanning_tree_edges(sparse_graph_with_negative_weights):
+    """
+    Creates a maximum spanning tree (by using minimum spanning tree on negative weights)
+    and extracts edges as MaximumSpanningTreeEdge objects.
+
+    Args:
+        sparse_graph_with_negative_weights: Sparse graph with negative confidence scores
+                                            (required for maximum spanning tree)
+
+    Returns:
+        List of MaximumSpanningTreeEdge objects sorted by confidence
+    """
+    # Computing maximum spanning tree by using minimum spanning tree on negative weights
+    maximum_spanning_tree = sp.csgraph.minimum_spanning_tree(sparse_graph_with_negative_weights).tocoo()
+    edges = []
+
+    # Convert maximum spanning tree data to MaximumSpanningTreeEdge objects
+    for neg_confidence, source_vertex, target_vertex in zip(
+        maximum_spanning_tree.data, maximum_spanning_tree.row, maximum_spanning_tree.col
+    ):
+        # Convert negative confidence back to positive
+        confidence = -neg_confidence
+        edges.append(MaximumSpanningTreeEdge(confidence, source_vertex, target_vertex))
+
+    edges.sort(key=lambda edge: edge.confidence, reverse=True)
+
+    return edges
+
+
+def find_edge_to_connect_tree(remaining_edges, done):
+    """Find an edge that connects to our existing tree."""
+    for idx, edge in enumerate(remaining_edges):
+        i, j = edge.source_vertex, edge.target_vertex
+
+        # Check if this edge connects to our existing tree
+        if (i in done and j not in done) or (j in done and i not in done):
+            return idx
+    return -1
+
+
+def initialize_tree_with_strongest_edge(
+    strongest_edge, pts3d, im_poses, im_focals, done, msp_edges, pred_source, pred_target, has_im_poses, device
+):
+    """Initialize the tree with the strongest edge."""
+    i, j = strongest_edge.source_vertex, strongest_edge.target_vertex
+    edge_str = strongest_edge.edge_str
+
+    # Initialize the first two point clouds
+    pts3d[i] = pred_source[edge_str].clone()
+    pts3d[j] = pred_target[edge_str].clone()
+    done.add(i)
+    done.add(j)
+
     if has_im_poses:
-        # set the strongest edge to be the origin of the world
+        # Set the strongest edge to be the origin of the world
         im_poses[i] = torch.eye(4, device=device)
-        im_focals[i] = estimate_focal(pred_i[i_j])
+        im_focals[i] = estimate_focal(pred_source[edge_str])
 
-    # set initial pointcloud based on pairwise graph
-    msp_edges = [(i, j)]
+    # Add the first edge to our maximum spanning tree
+    msp_edges.append((i, j))
 
-    while todo:
-        # each time, predict the next one
-        score, i, j = todo.pop()
+    return pts3d, im_poses, im_focals, done, msp_edges
 
-        if verbose:
-            print(f" init edge ({i},{j}*) {score=}")
 
-        i_j = f"{i}_{j}"
+def process_edge_i_to_j(
+    edge,
+    i,
+    j,
+    pts3d,
+    im_poses,
+    done,
+    msp_edges,
+    pred_source,
+    pred_target,
+    conf_source,
+    conf_target,
+    device,
+    has_im_poses,
+):
+    """Process an edge where i is in the tree and j is not."""
+    edge_str = edge.edge_str
+    # 1. Find transformation to align source points with existing world coordinates
+    s, R, T = rigid_points_registration(pred_source[edge_str], pts3d[i], conf=conf_source[edge_str])
+    trf = sRT_to_4x4(s, R, T, device)
 
+    # 2. Transform target points to world coordinates using the same transformation
+    pts3d[j] = geotrf(trf, pred_target[edge_str])
+
+    # 3. Update tracking variables
+    done.add(j)
+    msp_edges.append((i, j))
+
+    # 4. Update camera pose if needed
+    if has_im_poses and im_poses[i] is None:
+        im_poses[i] = sRT_to_4x4(1, R, T, device)
+
+    return pts3d, im_poses, done, msp_edges
+
+
+def process_edge_j_to_i(
+    edge,
+    i,
+    j,
+    pts3d,
+    im_poses,
+    done,
+    msp_edges,
+    pred_source,
+    pred_target,
+    conf_source,
+    conf_target,
+    device,
+    has_im_poses,
+):
+    """Process an edge where j is in the tree and i is not."""
+    edge_str = edge.edge_str
+    # 1. Find transformation to align target points with existing world coordinates
+    s, R, T = rigid_points_registration(pred_target[edge_str], pts3d[j], conf=conf_target[edge_str])
+    trf = sRT_to_4x4(s, R, T, device)
+
+    # 2. Transform source points to world coordinates using the same transformation
+    pts3d[i] = geotrf(trf, pred_source[edge_str])
+
+    # 3. Update tracking variables
+    done.add(i)
+    msp_edges.append((i, j))
+
+    # 4. Update camera pose if needed
+    if has_im_poses and im_poses[i] is None:
+        im_poses[i] = sRT_to_4x4(1, R, T, device)
+
+    return pts3d, im_poses, done, msp_edges
+
+
+def grow_tree(
+    remaining_edges,
+    pts3d,
+    im_poses,
+    im_focals,
+    done,
+    msp_edges,
+    pred_source,
+    pred_target,
+    conf_source,
+    conf_target,
+    has_im_poses,
+    device,
+):
+    """Grow the tree by adding edges one by one."""
+    while remaining_edges:
+        # Find an edge that connects to the existing tree
+        edge_idx = find_edge_to_connect_tree(remaining_edges, done)
+
+        # If no connecting edge found, break (shouldn't happen in a valid spanning tree)
+        if edge_idx == -1:
+            break
+
+        # Process the found edge
+        edge = remaining_edges.pop(edge_idx)
+        i, j = edge.source_vertex, edge.target_vertex
+        edge_str = edge.edge_str
+
+        # Estimate focal length if needed
         if im_focals[i] is None:
-            im_focals[i] = estimate_focal(pred_i[i_j])
+            im_focals[i] = estimate_focal(pred_source[edge_str])
 
-        if i in done:
-            assert j not in done
-            # pred_i[i_j] is the depthmap for image i in the coordinate frame of i
-            # pred_j[i_j] is the depthmap for image j in the coordinate frame of i
-            # pts3d[i] is the depthmap for image in in the world coordinate frame
+        # Case 1: i is in the tree, j is not
+        if i in done and j not in done:
+            pts3d, im_poses, done, msp_edges = process_edge_i_to_j(
+                edge,
+                i,
+                j,
+                pts3d,
+                im_poses,
+                done,
+                msp_edges,
+                pred_source,
+                pred_target,
+                conf_source,
+                conf_target,
+                device,
+                has_im_poses,
+            )
 
-            # 1. Find the the scale, rotation, and translation to align pred_i[i_j] with pts3d[i]
-            s, R, T = rigid_points_registration(pred_i[i_j], pts3d[i], conf=conf_i[i_j])
+        # Case 2: j is in the tree, i is not
+        elif j in done and i not in done:
+            pts3d, im_poses, done, msp_edges = process_edge_j_to_i(
+                edge,
+                i,
+                j,
+                pts3d,
+                im_poses,
+                done,
+                msp_edges,
+                pred_source,
+                pred_target,
+                conf_source,
+                conf_target,
+                device,
+                has_im_poses,
+            )
 
-            # 2. Convert to homogeneous coordinates
-            trf = sRT_to_4x4(s, R, T, device)
+    return pts3d, im_poses, im_focals, done, msp_edges
 
-            # 3. Use the same matrix to transform pointmap pred_j[i_j] to world coordinates
-            #    this is possible as pred_j[i_j] is in the same coordinate frame as pred_i[i_j]
-            pts3d[j] = geotrf(trf, pred_j[i_j])
 
-            done.add(j)
-            msp_edges.append((i, j))
+def complete_missing_information(
+    pts3d,
+    im_poses,
+    im_focals,
+    sparse_graph,
+    pred_source,
+    im_conf,
+    min_conf_thr,
+    device,
+    niter_PnP,
+    has_im_poses,
+    imshapes,
+):
+    """
+    Complete missing focal lengths and camera poses.
 
-            if has_im_poses and im_poses[i] is None:
-                im_poses[i] = sRT_to_4x4(1, R, T, device)
+    This step is crucial because:
+    1. Not all focal lengths may have been estimated during tree construction
+    2. Some camera poses might be missing if they weren't directly connected in the MST
+    3. We need complete camera parameters for all images to create a coherent 3D reconstruction
 
-        elif j in done:
-            assert i not in done
-            s, R, T = rigid_points_registration(pred_j[i_j], pts3d[j], conf=conf_j[i_j])
-            trf = sRT_to_4x4(s, R, T, device)
-            pts3d[i] = geotrf(trf, pred_i[i_j])
-            done.add(i)
-            msp_edges.append((i, j))
+    The function works by:
+    1. First estimating any missing focal lengths using the best available edges
+    2. Then using Perspective-n-Point (PnP) to estimate camera poses from 3D-2D correspondences
+    3. Falling back to identity poses if PnP fails (as a last resort)
 
-            if has_im_poses and im_poses[i] is None:
-                im_poses[i] = sRT_to_4x4(1, R, T, device)
-        else:
-            # let's try again later
-            todo.insert(0, (score, i, j))
+    Args:
+        pts3d: List of 3D points in world coordinates
+        im_poses: List of camera poses (some may be None)
+        im_focals: List of focal lengths (some may be None)
+        sparse_graph: Graph with edge confidence scores
 
-    if has_im_poses:
-        # complete all missing informations
-        pair_scores = list(sparse_graph.values())  # already negative scores: less is best
-        edges_from_best_to_worse = np.array(list(sparse_graph.keys()))[np.argsort(pair_scores)]
-        for i, j in edges_from_best_to_worse.tolist():
-            if im_focals[i] is None:
-                im_focals[i] = estimate_focal(pred_i[edge_str(i, j)])
+    Returns:
+        im_poses: Complete list of camera poses
+        im_focals: Complete list of focal lengths
+    """
+    if not has_im_poses:
+        return None, None
 
-        for i in range(n_imgs):
-            if im_poses[i] is None:
-                msk = im_conf[i] > min_conf_thr
-                res = fast_pnp(pts3d[i], im_focals[i], msk=msk, device=device, niter_PnP=niter_PnP)
-                if res:
-                    im_focals[i], im_poses[i] = res
-            if im_poses[i] is None:
-                im_poses[i] = torch.eye(4, device=device)
-        im_poses = torch.stack(im_poses)
-    else:
-        im_poses = im_focals = None
+    # First, estimate any missing focal lengths using the best available edges
+    # We sort edges from best to worst based on confidence scores
+    pair_scores = list(sparse_graph.values())  # already negative scores: less is best
+    edges_from_best_to_worse = np.array(list(sparse_graph.keys()))[np.argsort(pair_scores)]
 
-    return pts3d, msp_edges, im_focals, im_poses
+    # Process edges in order of confidence to estimate missing focal lengths
+    for i, j in edges_from_best_to_worse.tolist():
+        if im_focals[i] is None:
+            edge_key = f"{i}_{j}"
+            # Use the source prediction from this edge to estimate focal length
+            im_focals[i] = estimate_focal(pred_source[edge_key])
+
+    # Then, estimate any missing poses using Perspective-n-Point (PnP)
+    # PnP solves for camera pose given 3D points and their 2D projections
+    for i in range(len(imshapes)):
+        if im_poses[i] is None:
+            # Use only points with confidence above threshold for reliable pose estimation
+            msk = im_conf[i] > min_conf_thr
+
+            # fast_pnp attempts to solve the PnP problem to get camera pose
+            res = fast_pnp(pts3d[i], im_focals[i], msk=msk, device=device, niter_PnP=niter_PnP)
+
+            if res:
+                # If PnP succeeds, update focal length and pose
+                im_focals[i], im_poses[i] = res
+
+        # If still no pose (PnP failed), use identity as fallback
+        # This is a last resort to ensure all images have poses
+        if im_poses[i] is None:
+            im_poses[i] = torch.eye(4, device=device)
+
+    # Stack all poses into a single tensor for easier handling
+    im_poses = torch.stack(im_poses)
+
+    return im_poses, im_focals
 
 
 def estimate_focal(pts3d_i, pp=None):

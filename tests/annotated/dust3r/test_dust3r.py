@@ -178,11 +178,8 @@ def test_asymmetric_croco_3d_equivalence():
 def test_asymmetric_croco_3d_equivalence_from_pretrained_naver_DUSt3R_ViTLarge_BaseDecoder_512_dpt():
     """Test that the annotated AsymmetricCroCo3DStereo is equivalent to the original."""
 
-    model_name = "naver/DUSt3R_ViTLarge_BaseDecoder_512_dpt"
-
     # Initialize models
-    original_model = AsymmetricCroCo3DStereo.from_pretrained(model_name)
-
+    original_model = AsymmetricCroCo3DStereo.from_pretrained("naver/DUSt3R_ViTLarge_BaseDecoder_512_dpt")
     annotated_model = AnnotatedAsymmetricCroCo3DStereo.from_pretrained_naver_DUSt3R_ViTLarge_BaseDecoder_512_dpt(
         original_model
     )

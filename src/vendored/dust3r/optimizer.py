@@ -6,6 +6,7 @@ import tqdm
 
 from .minimum_spanning_tree import (
     align_multiple_poses,
+    init_minimum_spanning_tree,
     minimum_spanning_tree_v2,
     rigid_points_registration,
     sRT_to_4x4,
