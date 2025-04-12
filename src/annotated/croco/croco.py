@@ -159,7 +159,13 @@ class AnnotatedCroCo(nn.Module):
         Returns:
             Images of shape (B, channels, H, W)
         """
-        return unpatchify(x, self.encoder.patch_embed.patch_size, channels=channels)[0]  # Return only the images
+        return unpatchify(
+            x,
+            self.encoder.patch_embed.patch_size,
+            self.encoder.patch_embed.num_patches_h,
+            self.encoder.patch_embed.num_patches_w,
+            channels=channels,
+        )[0]  # Return only the images
 
     def forward(self, img1: Tensor, img2: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """

@@ -160,3 +160,4 @@ cython_debug/
 #.idea/
 
 notebooks/croco/pretrained_models/*
+tests/test_data/cached_predictions.pkl
